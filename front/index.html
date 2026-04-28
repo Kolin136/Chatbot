@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jarana 고객센터</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="chat-container">
+        <header class="chat-header">
+            <div class="header-info">
+                <span class="status-dot"></span>
+                <div>
+                    <h1>Jarana 고객센터</h1>
+                    <p class="status-text">상담원 연결됨</p>
+                </div>
+            </div>
+        </header>
+
+        <main class="chat-messages" id="messages"></main>
+
+        <footer class="chat-input">
+            <textarea
+                id="message-input"
+                placeholder="메시지를 입력하세요"
+                rows="1"
+            ></textarea>
+            <button id="send-button" type="button">전송</button>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

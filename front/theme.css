@@ -1,0 +1,138 @@
+/* ============================================================
+   3가지 스타일 테마 — 보라/인디고는 절대 사용하지 않음.
+   각 테마는 [data-theme="..."] 속성에서 활성화됨.
+   ============================================================ */
+
+:root {
+  /* 공통: 라운드, 그림자, 모션 */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.04), 0 1px 3px rgba(20, 20, 30, 0.06);
+  --shadow-md: 0 4px 12px rgba(20, 20, 30, 0.06), 0 2px 6px rgba(20, 20, 30, 0.04);
+  --shadow-lg: 0 20px 40px -12px rgba(20, 20, 30, 0.12), 0 8px 16px -8px rgba(20, 20, 30, 0.08);
+  --shadow-pop: 0 30px 60px -20px rgba(20, 20, 30, 0.18);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ============================================================
+   테마 1: 코랄 (Coral) — 따뜻한 산호 + 머스타드. 친근한 데스크
+   ============================================================ */
+[data-theme="coral"] {
+  --bg-app: #fff7f1;
+  --bg-surface: #ffffff;
+  --bg-surface-2: #fff1e8;
+  --bg-elevated: #ffffff;
+  --bg-muted: #faeadd;
+
+  --text-primary: #2b1d14;
+  --text-secondary: #6b5547;
+  --text-tertiary: #a08977;
+  --text-on-accent: #ffffff;
+
+  --border-subtle: #f3e0cf;
+  --border-default: #e8cdb4;
+  --border-strong: #d4a888;
+
+  --accent: #f06a3b;
+  --accent-hover: #e25a2b;
+  --accent-soft: #ffe1d2;
+  --accent-text: #b34818;
+
+  --success: #4a9d6b;
+  --success-soft: #d9f0e1;
+  --warning: #d99a2b;
+  --warning-soft: #fbeec9;
+  --danger: #d9484a;
+  --danger-soft: #fbdcdc;
+  --info: #3b8cc9;
+  --info-soft: #d8ecf8;
+
+  --bg-grad-hero: radial-gradient(ellipse at top left, #ffe4d3 0%, transparent 50%),
+                  radial-gradient(ellipse at bottom right, #ffd6c2 0%, transparent 55%),
+                  #fff7f1;
+}
+
+/* ============================================================
+   테마 2: 민트 (Mint) — 신선한 틸 + 크림. 깔끔한 도구 느낌
+   ============================================================ */
+[data-theme="mint"] {
+  --bg-app: #f1faf7;
+  --bg-surface: #ffffff;
+  --bg-surface-2: #e6f5ef;
+  --bg-elevated: #ffffff;
+  --bg-muted: #d9eee5;
+
+  --text-primary: #0f2a23;
+  --text-secondary: #466359;
+  --text-tertiary: #82a094;
+  --text-on-accent: #ffffff;
+
+  --border-subtle: #d9eee5;
+  --border-default: #b8dccd;
+  --border-strong: #7fc1a8;
+
+  --accent: #14916a;
+  --accent-hover: #0e7a58;
+  --accent-soft: #c8ecdb;
+  --accent-text: #0a5a40;
+
+  --success: #14916a;
+  --success-soft: #c8ecdb;
+  --warning: #c98a1f;
+  --warning-soft: #fbeec9;
+  --danger: #c94142;
+  --danger-soft: #fbdcdc;
+  --info: #2f7fb3;
+  --info-soft: #d8ecf8;
+
+  --bg-grad-hero: radial-gradient(ellipse at top left, #d1eee0 0%, transparent 50%),
+                  radial-gradient(ellipse at bottom right, #c4ead8 0%, transparent 55%),
+                  #f1faf7;
+}
+
+/* ============================================================
+   테마 3: 선셋 (Sunset) — 따뜻한 핑크 + 피치. 부드럽고 컬러풀
+   ============================================================ */
+[data-theme="sunset"] {
+  --bg-app: #fff5f3;
+  --bg-surface: #ffffff;
+  --bg-surface-2: #fde9e4;
+  --bg-elevated: #ffffff;
+  --bg-muted: #fad8d0;
+
+  --text-primary: #2c1820;
+  --text-secondary: #6a4d52;
+  --text-tertiary: #a48285;
+  --text-on-accent: #ffffff;
+
+  --border-subtle: #fbd9d1;
+  --border-default: #f3b9ad;
+  --border-strong: #e08877;
+
+  --accent: #e85a7a;
+  --accent-hover: #d04668;
+  --accent-soft: #fbd3dd;
+  --accent-text: #a82a4c;
+
+  --success: #4d9b73;
+  --success-soft: #d4ecdd;
+  --warning: #d97e1f;
+  --warning-soft: #fbe5c9;
+  --danger: #cf3c5f;
+  --danger-soft: #fbd3dd;
+  --info: #4592c4;
+  --info-soft: #d8ecf8;
+
+  --bg-grad-hero: radial-gradient(ellipse at top left, #fad8d0 0%, transparent 50%),
+                  radial-gradient(ellipse at bottom right, #fce4dc 0%, transparent 55%),
+                  #fff5f3;
+}

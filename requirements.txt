@@ -5,3 +5,5 @@ cachetools
 chromadb
 httpx
 python-dotenv
+docling
+transformers

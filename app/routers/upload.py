@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +35,26 @@ DOCS_ROOT = Path("docs")
 _VALID_STEM_PATTERN = re.compile(r"[^A-Za-z0-9가-힣_\-\.\[\] ]")
 
 
+def _fix_multipart_filename(name: str) -> str:
+    """multipart filename 한글 깨짐을 두 단계로 복원.
+
+    1) latin-1로 디코딩된 mojibake인 경우 → UTF-8로 재해석.
+       (일부 starlette 환경에서 발생 가능)
+    2) macOS의 NFD(분해형 자모) 한글 → NFC(합쳐진 음절) 정규화.
+       (macOS Finder에서 직접 업로드 시 발생)
+    """
+    if not name:
+        return name
+    try:
+        # latin-1 mojibake 케이스: 모든 글자가 0~255 → 재해석
+        decoded = name.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        # 이미 정상 UTF-8 (한글 음절 NFC 또는 NFD 자모)
+        decoded = name
+    # NFC 정규화 — NFD 분해 자모를 합쳐진 음절로 통합
+    return unicodedata.normalize("NFC", decoded)
+
+
 def _sanitize_stem(stem: str) -> str:
     cleaned = _VALID_STEM_PATTERN.sub("_", stem).strip()
     return cleaned or "document"
@@ -48,12 +69,13 @@ def _resolve_doc_name(original_stem: str) -> str:
     return f"{base}__{timestamp}"
 
 
-def _run_chunking_job(
+async def _run_chunking_job(
     job_id: str,
     pdf_path: Path,
     do_ocr: bool,
+    strategy: str,
 ) -> None:
-    """BackgroundTasks에서 실행되는 청킹 작업. JobStore 업데이트."""
+    """BackgroundTasks에서 실행되는 청킹 작업 (async). JobStore 업데이트."""
     job_store.update(job_id, status="running")
 
     def _progress(progress: int, step: str, message: str) -> None:
@@ -62,10 +84,11 @@ def _run_chunking_job(
         )
 
     try:
-        result = process_pdf(
+        result = await process_pdf(
             pdf_path=pdf_path,
             output_root=DOCS_ROOT,
             do_ocr=do_ocr,
+            strategy=strategy,
             progress_callback=_progress,
         )
         job_store.update(
@@ -80,6 +103,7 @@ def _run_chunking_job(
                 "chunk_count": result.chunk_count,
                 "picture_count": result.picture_count,
                 "table_count": result.table_count,
+                "strategy": result.strategy,
             },
         )
     except Exception as exc:
@@ -98,13 +122,21 @@ async def upload_pdf(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     do_ocr: bool = Form(False),
+    strategy: str = Form("docling_hybrid"),
 ) -> UploadStartResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="파일 이름이 비어있습니다.")
-    if not file.filename.lower().endswith(".pdf"):
+    # multipart filename 인코딩 보정 (latin-1 mojibake + macOS NFD)
+    filename = _fix_multipart_filename(file.filename)
+    if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다.")
+    if strategy not in ("docling_hybrid", "langchain_semantic"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"지원하지 않는 strategy: {strategy}",
+        )
 
-    original_stem = Path(file.filename).stem
+    original_stem = Path(filename).stem
     doc_name = _resolve_doc_name(original_stem)
     out_dir = DOCS_ROOT / doc_name
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -120,11 +152,12 @@ async def upload_pdf(
     job_id = str(uuid.uuid4())
     job_store.create(job_id)
     background_tasks.add_task(
-        _run_chunking_job, job_id, saved_path, do_ocr
+        _run_chunking_job, job_id, saved_path, do_ocr, strategy
     )
 
     logger.info(
-        "업로드 수신: %s → %s (job_id=%s)", file.filename, saved_path, job_id
+        "업로드 수신: %s → %s (job_id=%s, strategy=%s)",
+        filename, saved_path, job_id, strategy,
     )
     return UploadStartResponse(
         job_id=job_id,

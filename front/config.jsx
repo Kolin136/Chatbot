@@ -31,11 +31,12 @@ window.APP_CONFIG = {
 // ============================================================
 
 window.api = {
-  async uploadPdf(file, doOcr) {
-    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.uploadPdf(file, doOcr);
+  async uploadPdf(file, doOcr, strategy = "docling_hybrid") {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.uploadPdf(file, doOcr, strategy);
     const form = new FormData();
     form.append("file", file);
     form.append("do_ocr", String(doOcr));
+    form.append("strategy", strategy);
     const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.upload, {
       method: "POST",
       body: form,
@@ -137,12 +138,13 @@ const _mockState = {
 };
 
 window.mockApi = {
-  async uploadPdf(file, doOcr) {
+  async uploadPdf(file, doOcr, strategy = "docling_hybrid") {
     await _delay(400);
     const jobId = "job_" + Math.random().toString(36).slice(2, 10);
     _mockState.jobs[jobId] = {
       startedAt: Date.now(),
       doOcr,
+      strategy,
       docName: file?.name || "document.pdf",
     };
     return {

@@ -4,7 +4,7 @@ from cachetools import TTLCache
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
 
-from app.config import GEMINI_MODEL
+from app.config import chat_model
 
 SYSTEM_PROMPT = """\
 당신은 RAG 검증용 지원 에이전트입니다.
@@ -29,7 +29,7 @@ async def keep_recent(messages: list[ModelMessage]) -> list[ModelMessage]:
 
 
 agent = Agent(
-    GEMINI_MODEL,
+    chat_model,
     instructions=SYSTEM_PROMPT,
     history_processors=[keep_recent], # ← 이건 함수를 "등록"만 하는 것이지, 실제로는 Agent가 메시지를 처리할 때마다 keep_recent 함수를 호출해서 메시지 히스토리를 관리합니다.
 )

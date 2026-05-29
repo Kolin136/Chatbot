@@ -1,9 +1,12 @@
 fastapi
 uvicorn[standard]
-pydantic-ai[google]
+pydantic-ai[openai]
 cachetools
 chromadb
 httpx
 python-dotenv
 docling
 transformers
+langchain-core
+langchain-text-splitters
+langchain-experimental

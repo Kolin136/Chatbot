@@ -4,10 +4,10 @@ from pathlib import Path
 
 from pydantic_ai import Agent
 
-from app.config import GEMINI_MODEL, chroma_client, embedder
+from app.config import chat_model, chroma_client, embedder
 
 summary_agent = Agent(
-    GEMINI_MODEL,
+    chat_model,
     instructions="주어진 텍스트를 요약하고 키워드를 추출하는 도우미입니다.",
 )
 

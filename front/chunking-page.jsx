@@ -7,6 +7,7 @@ function ChunkingPage({ onGoChat }) {
 
   const [file, setFile] = useState(null);
   const [doOcr, setDoOcr] = useState(false);
+  const [strategy, setStrategy] = useState("docling_hybrid");
 
   // 청킹 진행
   const [jobId, setJobId] = useState(null);
@@ -40,7 +41,7 @@ function ChunkingPage({ onGoChat }) {
     setChunkProgress(0);
     setChunkMessage("업로드 중…");
     try {
-      const up = await window.api.uploadPdf(file, doOcr);
+      const up = await window.api.uploadPdf(file, doOcr, strategy);
       setJobId(up.job_id);
       setDocName(up.doc_name);
     } catch (e) {
@@ -201,6 +202,8 @@ function ChunkingPage({ onGoChat }) {
               setFile={setFile}
               doOcr={doOcr}
               setDoOcr={setDoOcr}
+              strategy={strategy}
+              setStrategy={setStrategy}
               error={chunkError}
               onStart={startChunking}
               onGoEmbedSelect={() => setPhase("embed_select")}
@@ -282,7 +285,7 @@ function ChunkingPage({ onGoChat }) {
 // ============================================================
 // Phase: 업로드
 // ============================================================
-function UploadPhase({ file, setFile, doOcr, setDoOcr, error, onStart, onGoEmbedSelect }) {
+function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, error, onStart, onGoEmbedSelect }) {
   return (
     <div className="phase anim-in">
       <div className="phase-hero">
@@ -293,6 +296,43 @@ function UploadPhase({ file, setFile, doOcr, setDoOcr, error, onStart, onGoEmbed
 
       <div className="card phase-card">
         <FileDropzone file={file} onFile={setFile} />
+
+        <div className="divider" />
+
+        <div className="strategy-field">
+          <div className="strategy-field-label">청킹 전략</div>
+          <div className="strategy-field-desc">
+            PDF를 어떤 방식으로 청크 단위로 자를지 선택하세요.
+          </div>
+          <div className="strategy-options">
+            <label className={"strategy-option" + (strategy === "docling_hybrid" ? " active" : "")}>
+              <input
+                type="radio"
+                name="strategy"
+                value="docling_hybrid"
+                checked={strategy === "docling_hybrid"}
+                onChange={(e) => setStrategy(e.target.value)}
+              />
+              <div className="strategy-option-text">
+                <div className="strategy-option-name">Docling Hybrid</div>
+                <div className="strategy-option-sub">문서 구조 단위 + 토큰 한도. 빠르고 안정적.</div>
+              </div>
+            </label>
+            <label className={"strategy-option" + (strategy === "langchain_semantic" ? " active" : "")}>
+              <input
+                type="radio"
+                name="strategy"
+                value="langchain_semantic"
+                checked={strategy === "langchain_semantic"}
+                onChange={(e) => setStrategy(e.target.value)}
+              />
+              <div className="strategy-option-text">
+                <div className="strategy-option-name">LangChain Semantic</div>
+                <div className="strategy-option-sub">임베딩 유사도 기반 의미 단위. 느리지만 의미 흐름 우선.</div>
+              </div>
+            </label>
+          </div>
+        </div>
 
         <div className="divider" />
 

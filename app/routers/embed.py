@@ -23,7 +23,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic_ai import Agent
 
-from app.config import GEMINI_MODEL, chroma_client, embedder
+from app.config import chat_model, chroma_client, embedder
 from app.embed_jobs import embed_job_store
 from app.models import (
     EmbedRequest,
@@ -51,7 +51,7 @@ SUMMARY_INSTRUCTIONS = (
 SUMMARY_PROMPT_TEMPLATE = "다음 텍스트를 요약해 주세요:\n\n{text}"
 
 _summary_agent: Agent[None, str] = Agent(
-    GEMINI_MODEL,
+    chat_model,
     instructions=SUMMARY_INSTRUCTIONS,
 )
 _summary_last_call = 0.0  # 모듈 전역 — process 내 요약 호출 throttle 공유

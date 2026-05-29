@@ -26,6 +26,7 @@ function ChunkingPage({ onGoChat }) {
   // 임베딩
   const [collectionName, setCollectionName] = useState("");
   const [collectionTouched, setCollectionTouched] = useState(false);
+  const [useSummary, setUseSummary] = useState(false);  // 기본 OFF — 청크 원본을 그대로 임베딩
   const [embedJobId, setEmbedJobId] = useState(null);
   const [embedProgress, setEmbedProgress] = useState(0);
   const [embedStep, setEmbedStep] = useState("");
@@ -111,7 +112,7 @@ function ChunkingPage({ onGoChat }) {
     setEmbedProgress(0);
     setEmbedMessage("준비 중…");
     try {
-      const res = await window.api.startEmbedding(docName, collectionName.trim());
+      const res = await window.api.startEmbedding(docName, collectionName.trim(), useSummary);
       setEmbedJobId(res.embed_job_id);
     } catch (e) {
       setEmbedError(e.message || "임베딩 시작 실패");
@@ -234,6 +235,8 @@ function ChunkingPage({ onGoChat }) {
               setCollectionName={setCollectionName}
               touched={collectionTouched}
               setTouched={setCollectionTouched}
+              useSummary={useSummary}
+              setUseSummary={setUseSummary}
               onPreview={openChunkPreview}
               onEmbed={startEmbedding}
               onReset={reset}
@@ -525,7 +528,7 @@ function labelForStep(kind, step) {
 // ============================================================
 // Phase: 청킹 완료 → 컬렉션 입력 + 임베딩
 // ============================================================
-function ChunkedPhase({ docName, result, collectionName, setCollectionName, touched, setTouched, onPreview, onEmbed, onReset, error }) {
+function ChunkedPhase({ docName, result, collectionName, setCollectionName, touched, setTouched, useSummary, setUseSummary, onPreview, onEmbed, onReset, error }) {
   const valid = isValidCollection(collectionName);
   const showErr = touched && !valid && collectionName.length > 0;
 
@@ -577,6 +580,23 @@ function ChunkedPhase({ docName, result, collectionName, setCollectionName, touc
             </span>
           )}
         </div>
+
+        <label className="checkbox-row" style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 12, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={useSummary}
+            onChange={(e) => setUseSummary(e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span style={{ fontSize: 13, lineHeight: 1.5 }}>
+            LLM으로 청크 요약 후 임베딩
+            <br />
+            <small style={{ color: "var(--text-secondary, #888)" }}>
+              검색 매칭 정확도가 올라갈 수 있으나 청크당 LLM 호출 1회가 추가됩니다 (시간·비용 증가).
+              끄면 청크 원본을 그대로 임베딩 — 빠르고 저렴.
+            </small>
+          </span>
+        </label>
 
         {error && (
           <div className="error-banner">

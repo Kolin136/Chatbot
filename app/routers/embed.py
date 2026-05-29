@@ -1,10 +1,12 @@
-"""임베딩 라우터 — chunks.jsonl → (요약) → 임베딩 → ChromaDB 저장.
+"""임베딩 라우터 — chunks.jsonl → (옵션: 요약) → 임베딩 → ChromaDB 저장.
 
-흐름:
-  contextualized_text → Gemini 요약 → 요약을 임베딩 → ChromaDB add
-  - documents: 요약 (검색 매칭용)
-  - metadata.raw_text: contextualized_text 원본 (LLM 컨텍스트용, rag.py 가 우선 사용)
-  - metadata.summary: 요약 (조회 편의)
+흐름 (`summarize` 플래그로 분기):
+  - summarize=True  : contextualized_text → LLM 요약 → 요약을 임베딩 → ChromaDB add
+                      · documents=요약, metadata.summary=요약, metadata.raw_text=원본
+  - summarize=False : contextualized_text → 그대로 임베딩 → ChromaDB add
+                      · documents=원본, metadata.summary 없음, metadata.raw_text=원본
+
+어느 경우든 `metadata.raw_text`에 원본이 들어가므로 rag.py가 LLM 컨텍스트로 우선 사용한다.
 
 POST /api/embed                       : 임베딩 작업 시작 (백그라운드)
 GET  /api/embed/status/{embed_job_id} : 진행률/결과 조회
@@ -114,13 +116,15 @@ async def start_embedding(
         chunks_path=chunks_path,
         collection_name=req.collection_name,
         doc_name=req.doc_name,
+        summarize=req.summarize,
     )
 
     logger.info(
-        "임베딩 시작: collection=%s job=%s chunks=%s",
+        "임베딩 시작: collection=%s job=%s chunks=%s summarize=%s",
         req.collection_name,
         embed_job_id,
         chunks_path,
+        req.summarize,
     )
     return EmbedStartResponse(
         embed_job_id=embed_job_id,
@@ -149,8 +153,12 @@ async def _run_embed_job(
     chunks_path: Path,
     collection_name: str,
     doc_name: str,
+    summarize: bool = False,
 ) -> None:
     """BackgroundTasks 실행 함수 (async). embed_job_store 갱신.
+
+    summarize=True  : 청크 원본 → LLM 요약 → 요약을 임베딩 → ChromaDB add
+    summarize=False : 청크 원본을 그대로 임베딩 → ChromaDB add (요약 단계 skip)
 
     async 함수로 둬야 embedder.embed_documents (httpx) 호출 시 동일 event loop 사용 →
     'Event loop is closed' 회피.
@@ -186,38 +194,56 @@ async def _run_embed_job(
         )
 
         total_batches = (total + EMBED_BATCH_SIZE - 1) // EMBED_BATCH_SIZE
-        logger.info(
-            "요약+임베딩 배치 시작: collection=%s, 청크 %d개 → %d개 배치 (batch_size=%d, summary_interval=%.1fs)",
-            collection_name, total, total_batches, EMBED_BATCH_SIZE, SUMMARY_INTERVAL_SEC,
-        )
+        if summarize:
+            logger.info(
+                "요약+임베딩 배치 시작: collection=%s, 청크 %d개 → %d개 배치 (batch_size=%d, summary_interval=%.1fs)",
+                collection_name, total, total_batches, EMBED_BATCH_SIZE, SUMMARY_INTERVAL_SEC,
+            )
+        else:
+            logger.info(
+                "임베딩 배치 시작 (요약 skip): collection=%s, 청크 %d개 → %d개 배치 (batch_size=%d)",
+                collection_name, total, total_batches, EMBED_BATCH_SIZE,
+            )
 
-        # 청크별: ① 요약 호출 (rate limit 적용) → 배치 단위로 ② 임베딩 ③ ChromaDB add
+        # progress 비율: summarize=True 면 요약 0~70% + 임베딩/저장 70~95%
+        #                summarize=False 면 임베딩/저장 0~95%
+        summary_progress_share = 70 if summarize else 0
+        store_progress_start = summary_progress_share  # 임베딩+저장 시작점
+        store_progress_range = 95 - store_progress_start
+
+        # 청크별: (옵션) 요약 → 배치 단위로 임베딩 → ChromaDB add
         processed = 0
         for batch_idx, batch_start in enumerate(range(0, total, EMBED_BATCH_SIZE), start=1):
             batch = chunks[batch_start : batch_start + EMBED_BATCH_SIZE]
             raw_texts = [c.get("contextualized_text") or c.get("text") or "" for c in batch]
 
-            # ① 요약 — 청크별 순차 호출 (throttle)
-            summaries: list[str] = []
-            for i, raw in enumerate(raw_texts):
-                global_idx = batch_start + i + 1
-                summary = await _summarize_one(raw, global_idx, total)
-                summaries.append(summary)
-                # 요약 단계 progress (0% ~ 70%)
-                summary_pct = int((global_idx / total) * 70)
-                embed_job_store.update(
-                    embed_job_id,
-                    progress=summary_pct,
-                    step="summarize",
-                    message=f"요약 생성 중 ({global_idx}/{total} 청크)",
-                )
+            if summarize:
+                # 요약 — 청크별 순차 호출 (throttle 적용)
+                summaries: list[str] = []
+                for i, raw in enumerate(raw_texts):
+                    global_idx = batch_start + i + 1
+                    summary = await _summarize_one(raw, global_idx, total)
+                    summaries.append(summary)
+                    summary_pct = int((global_idx / total) * summary_progress_share)
+                    embed_job_store.update(
+                        embed_job_id,
+                        progress=summary_pct,
+                        step="summarize",
+                        message=f"요약 생성 중 ({global_idx}/{total} 청크)",
+                    )
+                embed_inputs = summaries
+                documents = summaries  # ChromaDB documents = 요약 (검색 매칭용)
+            else:
+                # 요약 skip — 청크 원본을 그대로 임베딩
+                embed_inputs = raw_texts
+                documents = raw_texts  # ChromaDB documents = 원본
 
-            # ② 임베딩 (요약을 임베딩)
+            # 임베딩
             logger.info(
-                "[batch %d/%d] Gemini 임베딩 호출 (요약 %d개)",
-                batch_idx, total_batches, len(summaries),
+                "[batch %d/%d] LM Studio 임베딩 호출 (%d개)",
+                batch_idx, total_batches, len(embed_inputs),
             )
-            embed_result = await embedder.embed_documents(summaries)
+            embed_result = await embedder.embed_documents(embed_inputs)
             embeddings = list(embed_result.embeddings)
             logger.info(
                 "[batch %d/%d] 임베딩 응답 수신 (%d 벡터, dim=%d)",
@@ -226,14 +252,14 @@ async def _run_embed_job(
                 len(embeddings[0]) if embeddings else 0,
             )
 
-            # ③ ChromaDB add — documents=요약, metadata.raw_text=원본
+            # ChromaDB add
             ids = [c["chunk_id"] for c in batch]
-            documents = summaries  # 검색 시 documents 필드 = 요약
             metadatas: list[dict] = []
-            for c, raw, summary in zip(batch, raw_texts, summaries):
+            for idx_in_batch, (c, raw) in enumerate(zip(batch, raw_texts)):
                 meta = _build_metadata(c)
-                meta["raw_text"] = raw  # 원본 contextualized_text (rag.py가 우선 사용)
-                meta["summary"] = summary
+                meta["raw_text"] = raw  # 어느 모드든 원본 보관 (rag.py가 우선 사용)
+                if summarize:
+                    meta["summary"] = summaries[idx_in_batch]
                 metadatas.append(meta)
 
             await asyncio.to_thread(
@@ -244,8 +270,7 @@ async def _run_embed_job(
                 metadatas=metadatas,
             )
             processed += len(batch)
-            # add 후 progress (70% ~ 95%)
-            pct = 70 + int((processed / total) * 25)
+            pct = store_progress_start + int((processed / total) * store_progress_range)
             logger.info(
                 "[batch %d/%d] ChromaDB 저장 완료 → 누적 %d/%d (%d%%)",
                 batch_idx, total_batches, processed, total, pct,

@@ -74,6 +74,8 @@ class ChunkingsResponse(BaseModel):
 class EmbedRequest(BaseModel):
     doc_name: str
     collection_name: str
+    summarize: bool = False
+    """True면 청크를 LLM으로 요약 후 요약을 임베딩. False면 청크 원본을 그대로 임베딩."""
 
 
 class EmbedStartResponse(BaseModel):

@@ -66,12 +66,12 @@ window.api = {
     return res.json(); // { chunkings: [{ doc_name, source_pdf, chunk_count, picture_count, table_count, created_at }] }
   },
 
-  async startEmbedding(docName, collectionName) {
-    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.startEmbedding(docName, collectionName);
+  async startEmbedding(docName, collectionName, summarize = false) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.startEmbedding(docName, collectionName, summarize);
     const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.embed, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ doc_name: docName, collection_name: collectionName }),
+      body: JSON.stringify({ doc_name: docName, collection_name: collectionName, summarize }),
     });
     if (!res.ok) throw new Error(`Embed failed: ${res.status}`);
     return res.json(); // { embed_job_id }
@@ -186,13 +186,14 @@ window.mockApi = {
     return { chunks: _sampleChunks(jobId) };
   },
 
-  async startEmbedding(jobId, collectionName) {
+  async startEmbedding(jobId, collectionName, summarize = false) {
     await _delay(300);
     const embedJobId = "emb_" + Math.random().toString(36).slice(2, 10);
     _mockState.embeds[embedJobId] = {
       startedAt: Date.now(),
       collection: collectionName,
       jobId,
+      summarize,
     };
     return { embed_job_id: embedJobId, collection_name: collectionName };
   },

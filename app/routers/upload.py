@@ -31,7 +31,7 @@ from app.upload_jobs import job_store
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DOCS_ROOT = Path("docs")
+DOCS_ROOT = Path("chunking-results")
 _VALID_STEM_PATTERN = re.compile(r"[^A-Za-z0-9가-힣_\-\.\[\] ]")
 
 

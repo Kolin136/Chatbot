@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 EMBED_BATCH_SIZE = 32
-DOCS_ROOT = Path("docs")
+DOCS_ROOT = Path("chunking-results")
 
 # 요약 LLM 호출 간격 (초). Gemini free tier 분당 한도 회피용.
 # 환경변수로 조정 가능. 기본 13초 = 분당 ~4.6건 (scripts/index_docs.py 와 동일 정신).

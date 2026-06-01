@@ -11,6 +11,7 @@ function ChatPage({ initialCollection }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [useHybrid, setUseHybrid] = useState(false);  // ADR-006: 기본 OFF, 세션 단위 유지
   const messagesEndRef = useRef(null);
 
   // 컬렉션 초기 로드 (세션은 영속화 미구현이라 메모리에서만 누적)
@@ -49,7 +50,7 @@ function ChatPage({ initialCollection }) {
     setInput("");
     setSending(true);
     try {
-      const res = await window.api.sendChat(collection, userMsg.text, activeSessionId);
+      const res = await window.api.sendChat(collection, userMsg.text, activeSessionId, useHybrid);
       const aiMsg = {
         id: "m_" + Math.random().toString(36).slice(2, 8),
         role: "assistant",
@@ -185,6 +186,27 @@ function ChatPage({ initialCollection }) {
         </div>
 
         <div className="chat-input-wrap">
+          <label
+            htmlFor="hybrid-toggle"
+            data-testid="hybrid-toggle-label"
+            className="hybrid-toggle"
+          >
+            <input
+              id="hybrid-toggle"
+              data-testid="hybrid-toggle"
+              type="checkbox"
+              checked={useHybrid}
+              onChange={(e) => setUseHybrid(e.target.checked)}
+              aria-describedby="hybrid-toggle-desc"
+            />
+            <span className="hybrid-toggle__label">
+              하이브리드 검색
+              <small className="hybrid-toggle__hint"> (키워드 + 의미)</small>
+            </span>
+            <span id="hybrid-toggle-desc" className="sr-only">
+              켜면 임베딩 의미 검색에 BM25 키워드 검색을 결합해 정확한 용어 매칭이 강해집니다.
+            </span>
+          </label>
           <div className="chat-input-inner">
             <textarea
               className="chat-input"

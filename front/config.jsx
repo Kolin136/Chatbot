@@ -100,12 +100,12 @@ window.api = {
     return res.json();
   },
 
-  async sendChat(collection, message, sessionId) {
-    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.sendChat(collection, message, sessionId);
+  async sendChat(collection, message, sessionId, hybrid = false) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.sendChat(collection, message, sessionId, hybrid);
     const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.chat, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ collection, message, session_id: sessionId }),
+      body: JSON.stringify({ collection, message, session_id: sessionId, hybrid }),
     });
     if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
     return res.json();
@@ -236,7 +236,7 @@ window.mockApi = {
     return { sessions: _mockState.sessions };
   },
 
-  async sendChat(collection, message, sessionId) {
+  async sendChat(collection, message, sessionId, hybrid = false) {
     await _delay(700);
     const responses = [
       "스프링 인터셉터는 컨트롤러 호출 전후로 동작하는 컴포넌트입니다. preHandle → handler 실행 → postHandle → afterCompletion 순서로 호출됩니다.",

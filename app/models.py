@@ -10,6 +10,8 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
     message: str
     collection: str | None = None  # None이면 RAG 검색 skip
+    hybrid: bool = False
+    """True면 Dense + BM25 + RRF 경로 (app.retrieval.hybrid_search). False면 기존 dense-only."""
 
 
 class ChatSource(BaseModel):

@@ -10,3 +10,5 @@ transformers
 langchain-core
 langchain-text-splitters
 langchain-experimental
+rank_bm25
+kiwipiepy

@@ -554,3 +554,43 @@
   font-size: 11.5px;
   color: var(--text-tertiary);
 }
+
+/* ─── 하이브리드 검색 토글 (UI_GUIDE) ───────────────────────── */
+.hybrid-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  margin: 0 auto 8px;
+  user-select: none;
+}
+.hybrid-toggle:hover { color: var(--text-primary); }
+.hybrid-toggle input[type="checkbox"]:checked ~ .hybrid-toggle__label {
+  color: var(--text-primary);
+}
+.hybrid-toggle__hint { color: var(--text-tertiary); }
+.hybrid-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  .hybrid-toggle__hint { display: none; }
+}
+@media (forced-colors: active) {
+  .hybrid-toggle { color: CanvasText; }
+  .hybrid-toggle__hint { color: GrayText; }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

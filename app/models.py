@@ -70,6 +70,13 @@ class ChunkingsResponse(BaseModel):
     chunkings: list[ChunkingInfo]
 
 
+class RecommendResponse(BaseModel):
+    """청킹 전략 추천 응답. strategy는 'docling_hybrid' 또는 'langchain_semantic'."""
+
+    strategy: str
+    reason: str
+
+
 # ─── Embedding ───────────────────────────────────────────────────────────
 
 

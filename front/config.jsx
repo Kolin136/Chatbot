@@ -14,6 +14,7 @@ window.APP_CONFIG = {
   // 엔드포인트
   ENDPOINTS: {
     upload: "/api/upload",                          // POST multipart {file, do_ocr}
+    recommend: "/api/upload/recommend",              // POST multipart {file} → { strategy, reason }
     uploadStatus: (jobId) => `/api/upload/status/${jobId}`, // GET
     chunks: (docName) => `/api/chunkings/${encodeURIComponent(docName)}/chunks`,  // GET (청크 목록)
     chunkings: "/api/chunkings",                    // GET 청킹 결과 디렉터리 목록
@@ -43,6 +44,25 @@ window.api = {
     });
     if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
     return res.json(); // { job_id, doc_name, saved_path }
+  },
+
+  async recommendChunkingStrategy(file) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.recommendChunkingStrategy(file);
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.recommend, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      let detail = `Recommend failed: ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body?.detail) detail = body.detail;
+      } catch (_) { /* ignore */ }
+      throw new Error(detail);
+    }
+    return res.json(); // { strategy, reason }
   },
 
   async getUploadStatus(jobId) {
@@ -151,6 +171,23 @@ window.mockApi = {
       job_id: jobId,
       doc_name: file?.name || "document.pdf",
       saved_path: `/uploads/${jobId}/${file?.name || "document.pdf"}`,
+    };
+  },
+
+  async recommendChunkingStrategy(file) {
+    await _delay(800);
+    // mock: 파일명에 'semantic' 또는 'essay' 들어가면 langchain_semantic, 아니면 docling_hybrid
+    const name = (file?.name || "").toLowerCase();
+    const semantic = /semantic|essay|paper|논문|에세이/.test(name);
+    if (semantic) {
+      return {
+        strategy: "langchain_semantic",
+        reason: "(mock) 헤더 계층이 얕고 자유 서술이 많아 의미 변화점 기반 분할이 적합합니다. 표·그림은 드물고 긴 문단 흐름이 주를 이룹니다.",
+      };
+    }
+    return {
+      strategy: "docling_hybrid",
+      reason: "(mock) 명확한 헤더 계층과 표·그림이 잘 구분되어 있어 문서 구조 기반 청킹이 안정적입니다. 토큰 한도 보정으로 빠르고 정확한 분할이 가능합니다.",
     };
   },
 

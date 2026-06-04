@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-pydantic-ai[openai]
+pydantic-ai[openai,google]
 cachetools
 chromadb
 httpx
@@ -10,3 +10,5 @@ transformers
 langchain-core
 langchain-text-splitters
 langchain-experimental
+rank_bm25
+kiwipiepy

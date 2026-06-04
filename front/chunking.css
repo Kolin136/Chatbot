@@ -815,3 +815,91 @@
   color: var(--text-tertiary);
   line-height: 1.4;
 }
+
+/* 청킹 전략 추천 버튼 / 결과 카드 / 에러 */
+.recommend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 2px 0 6px;
+}
+.recommend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-text, var(--accent));
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, opacity 0.12s;
+}
+.recommend-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.recommend-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.recommend-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: recommend-spin 0.8s linear infinite;
+}
+@keyframes recommend-spin {
+  to { transform: rotate(360deg); }
+}
+.recommend-row-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.recommend-result-card {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.recommend-result-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--accent-text, var(--text-primary));
+}
+.recommend-result-header b { font-weight: 700; }
+.recommend-result-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.recommend-result-close:hover { color: var(--text-primary); }
+.recommend-result-reason {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.recommend-error {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--danger, #c0392b);
+}

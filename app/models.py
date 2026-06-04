@@ -10,6 +10,8 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
     message: str
     collection: str | None = None  # None이면 RAG 검색 skip
+    hybrid: bool = False
+    """True면 Dense + BM25 + RRF 경로 (app.retrieval.hybrid_search). False면 기존 dense-only."""
 
 
 class ChatSource(BaseModel):
@@ -68,12 +70,21 @@ class ChunkingsResponse(BaseModel):
     chunkings: list[ChunkingInfo]
 
 
+class RecommendResponse(BaseModel):
+    """청킹 전략 추천 응답. strategy는 'docling_hybrid' 또는 'langchain_semantic'."""
+
+    strategy: str
+    reason: str
+
+
 # ─── Embedding ───────────────────────────────────────────────────────────
 
 
 class EmbedRequest(BaseModel):
     doc_name: str
     collection_name: str
+    summarize: bool = False
+    """True면 청크를 LLM으로 요약 후 요약을 임베딩. False면 청크 원본을 그대로 임베딩."""
 
 
 class EmbedStartResponse(BaseModel):

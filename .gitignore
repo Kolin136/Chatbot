@@ -11,4 +11,4 @@ venv/
 .playwright-mcp/
 
 # 사용자 업로드 PDF + 청킹 결과 (커밋 X)
-/docs/
+/chunking-results/

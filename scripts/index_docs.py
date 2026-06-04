@@ -76,9 +76,9 @@ async def embed_summaries(summaries: list[str]) -> list[list[float]]:
 
 
 def run_indexing():
-    docs_dir = Path("docs")
+    docs_dir = Path("chunking-results")
     if not docs_dir.exists():
-        print("docs/ 폴더가 없습니다.")
+        print("chunking-results/ 폴더가 없습니다.")
         return
 
     print("[1/5] 문서 읽기")

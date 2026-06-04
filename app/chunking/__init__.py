@@ -81,7 +81,7 @@ def _noop(_progress: int, _step: str, _message: str) -> None:
 
 async def process_pdf(
     pdf_path: str | Path,
-    output_root: str | Path = "docs",
+    output_root: str | Path = "chunking-results",
     do_ocr: bool = False,
     strategy: ChunkStrategy = DEFAULT_STRATEGY,
     vlm_model: Any = None,

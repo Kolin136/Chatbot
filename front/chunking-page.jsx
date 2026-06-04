@@ -26,6 +26,7 @@ function ChunkingPage({ onGoChat }) {
   // 임베딩
   const [collectionName, setCollectionName] = useState("");
   const [collectionTouched, setCollectionTouched] = useState(false);
+  const [useSummary, setUseSummary] = useState(false);  // 기본 OFF — 청크 원본을 그대로 임베딩
   const [embedJobId, setEmbedJobId] = useState(null);
   const [embedProgress, setEmbedProgress] = useState(0);
   const [embedStep, setEmbedStep] = useState("");
@@ -111,7 +112,7 @@ function ChunkingPage({ onGoChat }) {
     setEmbedProgress(0);
     setEmbedMessage("준비 중…");
     try {
-      const res = await window.api.startEmbedding(docName, collectionName.trim());
+      const res = await window.api.startEmbedding(docName, collectionName.trim(), useSummary);
       setEmbedJobId(res.embed_job_id);
     } catch (e) {
       setEmbedError(e.message || "임베딩 시작 실패");
@@ -234,6 +235,8 @@ function ChunkingPage({ onGoChat }) {
               setCollectionName={setCollectionName}
               touched={collectionTouched}
               setTouched={setCollectionTouched}
+              useSummary={useSummary}
+              setUseSummary={setUseSummary}
               onPreview={openChunkPreview}
               onEmbed={startEmbedding}
               onReset={reset}
@@ -286,6 +289,36 @@ function ChunkingPage({ onGoChat }) {
 // Phase: 업로드
 // ============================================================
 function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, error, onStart, onGoEmbedSelect }) {
+  const [recommending, setRecommending] = useState(false);
+  const [recommendation, setRecommendation] = useState(null); // { strategy, reason } | null
+  const [recommendError, setRecommendError] = useState(null);
+
+  // file이 바뀌면 이전 추천 결과 무효화
+  useEffect(() => {
+    setRecommendation(null);
+    setRecommendError(null);
+  }, [file]);
+
+  const requestRecommendation = async () => {
+    if (!file || recommending) return;
+    setRecommending(true);
+    setRecommendError(null);
+    setRecommendation(null);
+    try {
+      const rec = await window.api.recommendChunkingStrategy(file);
+      if (rec?.strategy === "docling_hybrid" || rec?.strategy === "langchain_semantic") {
+        setStrategy(rec.strategy);
+        setRecommendation(rec);
+      } else {
+        setRecommendError("응답 형식이 예상과 다릅니다.");
+      }
+    } catch (e) {
+      setRecommendError(e?.message || "추천 실패");
+    } finally {
+      setRecommending(false);
+    }
+  };
+
   return (
     <div className="phase anim-in">
       <div className="phase-hero">
@@ -304,6 +337,57 @@ function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, er
           <div className="strategy-field-desc">
             PDF를 어떤 방식으로 청크 단위로 자를지 선택하세요.
           </div>
+
+          <div className="recommend-row">
+            <button
+              type="button"
+              className="recommend-btn"
+              disabled={!file || recommending}
+              onClick={requestRecommendation}
+              title={file ? "PDF를 분석해 적합한 청킹 전략을 추천합니다." : "먼저 PDF를 선택하세요."}
+            >
+              {recommending ? (
+                <>
+                  <span className="recommend-spinner" aria-hidden="true" />
+                  <span>PDF 분석 중…</span>
+                </>
+              ) : (
+                <>
+                  <Icon.Sparkles w={14} h={14} />
+                  <span>청킹 추천받기</span>
+                </>
+              )}
+            </button>
+            <span className="recommend-row-hint">
+              어떤 전략이 좋을지 고민될 때 — PDF를 분석해 추천해 드려요.
+            </span>
+          </div>
+
+          {recommendation && (
+            <div className="recommend-result-card">
+              <div className="recommend-result-header">
+                <Icon.Sparkles w={14} h={14} />
+                <span>추천: <b>{labelForStrategy(recommendation.strategy)}</b></span>
+                <button
+                  type="button"
+                  className="recommend-result-close"
+                  onClick={() => setRecommendation(null)}
+                  aria-label="추천 닫기"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="recommend-result-reason">{recommendation.reason}</div>
+            </div>
+          )}
+
+          {recommendError && (
+            <div className="recommend-error">
+              <Icon.AlertCircle w={12} h={12} />
+              <span>{recommendError}</span>
+            </div>
+          )}
+
           <div className="strategy-options">
             <label className={"strategy-option" + (strategy === "docling_hybrid" ? " active" : "")}>
               <input
@@ -467,6 +551,12 @@ function formatCreatedAt(iso) {
   return iso.replace("T", " ").slice(0, 16);
 }
 
+function labelForStrategy(s) {
+  if (s === "docling_hybrid") return "Docling Hybrid";
+  if (s === "langchain_semantic") return "LangChain Semantic";
+  return s;
+}
+
 // ============================================================
 // Phase: 진행 (청킹 / 임베딩 공통)
 // ============================================================
@@ -525,7 +615,7 @@ function labelForStep(kind, step) {
 // ============================================================
 // Phase: 청킹 완료 → 컬렉션 입력 + 임베딩
 // ============================================================
-function ChunkedPhase({ docName, result, collectionName, setCollectionName, touched, setTouched, onPreview, onEmbed, onReset, error }) {
+function ChunkedPhase({ docName, result, collectionName, setCollectionName, touched, setTouched, useSummary, setUseSummary, onPreview, onEmbed, onReset, error }) {
   const valid = isValidCollection(collectionName);
   const showErr = touched && !valid && collectionName.length > 0;
 
@@ -577,6 +667,23 @@ function ChunkedPhase({ docName, result, collectionName, setCollectionName, touc
             </span>
           )}
         </div>
+
+        <label className="checkbox-row" style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 12, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={useSummary}
+            onChange={(e) => setUseSummary(e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span style={{ fontSize: 13, lineHeight: 1.5 }}>
+            LLM으로 청크 요약 후 임베딩
+            <br />
+            <small style={{ color: "var(--text-secondary, #888)" }}>
+              검색 매칭 정확도가 올라갈 수 있으나 청크당 LLM 호출 1회가 추가됩니다 (시간·비용 증가).
+              끄면 청크 원본을 그대로 임베딩 — 빠르고 저렴.
+            </small>
+          </span>
+        </label>
 
         {error && (
           <div className="error-banner">

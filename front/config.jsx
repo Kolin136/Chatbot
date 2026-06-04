@@ -14,6 +14,7 @@ window.APP_CONFIG = {
   // 엔드포인트
   ENDPOINTS: {
     upload: "/api/upload",                          // POST multipart {file, do_ocr}
+    recommend: "/api/upload/recommend",              // POST multipart {file} → { strategy, reason }
     uploadStatus: (jobId) => `/api/upload/status/${jobId}`, // GET
     chunks: (docName) => `/api/chunkings/${encodeURIComponent(docName)}/chunks`,  // GET (청크 목록)
     chunkings: "/api/chunkings",                    // GET 청킹 결과 디렉터리 목록
@@ -45,6 +46,25 @@ window.api = {
     return res.json(); // { job_id, doc_name, saved_path }
   },
 
+  async recommendChunkingStrategy(file) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.recommendChunkingStrategy(file);
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.recommend, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      let detail = `Recommend failed: ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body?.detail) detail = body.detail;
+      } catch (_) { /* ignore */ }
+      throw new Error(detail);
+    }
+    return res.json(); // { strategy, reason }
+  },
+
   async getUploadStatus(jobId) {
     if (window.APP_CONFIG.USE_MOCK) return window.mockApi.getUploadStatus(jobId);
     const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.uploadStatus(jobId));
@@ -66,12 +86,12 @@ window.api = {
     return res.json(); // { chunkings: [{ doc_name, source_pdf, chunk_count, picture_count, table_count, created_at }] }
   },
 
-  async startEmbedding(docName, collectionName) {
-    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.startEmbedding(docName, collectionName);
+  async startEmbedding(docName, collectionName, summarize = false) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.startEmbedding(docName, collectionName, summarize);
     const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.embed, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ doc_name: docName, collection_name: collectionName }),
+      body: JSON.stringify({ doc_name: docName, collection_name: collectionName, summarize }),
     });
     if (!res.ok) throw new Error(`Embed failed: ${res.status}`);
     return res.json(); // { embed_job_id }
@@ -100,12 +120,12 @@ window.api = {
     return res.json();
   },
 
-  async sendChat(collection, message, sessionId) {
-    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.sendChat(collection, message, sessionId);
+  async sendChat(collection, message, sessionId, hybrid = false) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.sendChat(collection, message, sessionId, hybrid);
     const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.chat, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ collection, message, session_id: sessionId }),
+      body: JSON.stringify({ collection, message, session_id: sessionId, hybrid }),
     });
     if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
     return res.json();
@@ -154,6 +174,23 @@ window.mockApi = {
     };
   },
 
+  async recommendChunkingStrategy(file) {
+    await _delay(800);
+    // mock: 파일명에 'semantic' 또는 'essay' 들어가면 langchain_semantic, 아니면 docling_hybrid
+    const name = (file?.name || "").toLowerCase();
+    const semantic = /semantic|essay|paper|논문|에세이/.test(name);
+    if (semantic) {
+      return {
+        strategy: "langchain_semantic",
+        reason: "(mock) 헤더 계층이 얕고 자유 서술이 많아 의미 변화점 기반 분할이 적합합니다. 표·그림은 드물고 긴 문단 흐름이 주를 이룹니다.",
+      };
+    }
+    return {
+      strategy: "docling_hybrid",
+      reason: "(mock) 명확한 헤더 계층과 표·그림이 잘 구분되어 있어 문서 구조 기반 청킹이 안정적입니다. 토큰 한도 보정으로 빠르고 정확한 분할이 가능합니다.",
+    };
+  },
+
   async getUploadStatus(jobId) {
     await _delay(120);
     const job = _mockState.jobs[jobId];
@@ -186,13 +223,14 @@ window.mockApi = {
     return { chunks: _sampleChunks(jobId) };
   },
 
-  async startEmbedding(jobId, collectionName) {
+  async startEmbedding(jobId, collectionName, summarize = false) {
     await _delay(300);
     const embedJobId = "emb_" + Math.random().toString(36).slice(2, 10);
     _mockState.embeds[embedJobId] = {
       startedAt: Date.now(),
       collection: collectionName,
       jobId,
+      summarize,
     };
     return { embed_job_id: embedJobId, collection_name: collectionName };
   },
@@ -235,7 +273,7 @@ window.mockApi = {
     return { sessions: _mockState.sessions };
   },
 
-  async sendChat(collection, message, sessionId) {
+  async sendChat(collection, message, sessionId, hybrid = false) {
     await _delay(700);
     const responses = [
       "스프링 인터셉터는 컨트롤러 호출 전후로 동작하는 컴포넌트입니다. preHandle → handler 실행 → postHandle → afterCompletion 순서로 호출됩니다.",

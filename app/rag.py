@@ -36,11 +36,25 @@ async def search_relevant_context(
     query: str,
     collection_name: str,
     n_results: int = 3,
+    hybrid: bool = False,
 ) -> list[RetrievedChunk]:
     """주어진 컬렉션에서 query와 유사한 청크 n_results개 반환.
 
-    컬렉션이 없거나 검색 실패 시 빈 리스트 반환 (호출자가 처리).
+    hybrid=True면 Dense + BM25 + RRF (app.retrieval.hybrid_search 위임).
+    hybrid=False면 기존 dense-only 흐름 (ChromaDB 코사인 검색).
+    어느 경우든 실패 시 빈 리스트 (호출자가 처리).
     """
+    if hybrid:
+        # 지연 import — 모듈 순환 방지 (app.retrieval이 RetrievedChunk를 import함)
+        try:
+            from app.retrieval import hybrid_search
+            return await hybrid_search(query, collection_name, n_results=n_results)
+        except Exception:
+            logger.exception(
+                "hybrid_search 예외 — dense-only로 fallback (collection=%s)",
+                collection_name,
+            )
+            # fall through to dense
     result = await embedder.embed_query(query)
     query_embedding = result.embeddings[0]
 

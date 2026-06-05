@@ -1,0 +1,326 @@
+/* RAGAS 평가 페이지 — theme.css 변수만 사용 (기존 톤 유지) */
+
+.page-ragas {
+  align-items: center;
+  padding: 48px 24px 96px;
+}
+.ragas-inner {
+  width: 100%;
+  max-width: 880px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.ragas-head {
+  text-align: left;
+}
+
+.ragas-card {
+  padding: 26px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ragas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.ragas-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.ragas-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.ragas-field select.input,
+.ragas-field input.input {
+  width: 100%;
+}
+
+.ragas-toggle-row {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+}
+
+.ragas-evalset {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+}
+.ragas-evalset-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ragas-evalset-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ragas-muted {
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+.ragas-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.ragas-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+
+/* 진행 */
+.ragas-progress-card {
+  gap: 16px;
+}
+.ragas-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ragas-progress-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.ragas-progress-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.ragas-progress-step {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.ragas-progress-pct {
+  margin-left: auto;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.ragas-progress-msg {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.ragas-progress-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 결과 */
+.ragas-result-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ragas-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.ragas-metric {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ragas-metric-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ragas-metric-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.ragas-metric-desc {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.ragas-metric-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.ragas-prov {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 14px;
+}
+
+/* 비교 표 */
+.ragas-table-scroll {
+  overflow-x: auto;
+}
+.ragas-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ragas-table th,
+.ragas-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.ragas-table thead th {
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.ragas-table-metric {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ragas-table-num {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  text-align: right;
+}
+.ragas-compare-note {
+  margin-top: 4px;
+}
+
+/* 섹션 제목 / 설명 */
+.ragas-section-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.ragas-section-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.ragas-help {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+.ragas-help b { color: var(--text-secondary); font-weight: 600; }
+
+/* 평가셋 생성 패널 */
+.ragas-gen-row {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+.ragas-gen-drop {
+  flex: 1;
+  min-width: 260px;
+}
+.ragas-gen-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+  min-width: 160px;
+}
+
+/* 검수 리스트 */
+.ragas-review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+}
+.ragas-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+.ragas-review-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+.ragas-review-num {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  margin-top: 4px;
+}
+.ragas-review-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ragas-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 40px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 12px;
+}
+.ragas-save-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ragas-save-name {
+  flex: 1;
+  min-width: 200px;
+}
+.ragas-saved-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 14px;
+}

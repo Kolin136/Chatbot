@@ -84,6 +84,7 @@ async def process_pdf(
     output_root: str | Path = "chunking-results",
     do_ocr: bool = False,
     strategy: ChunkStrategy = DEFAULT_STRATEGY,
+    lang: str = "ko",
     vlm_model: Any = None,
     embed_model: str = DEFAULT_EMBED_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
@@ -120,7 +121,7 @@ async def process_pdf(
 
     # 2. picture classification 확인 → skip 대상 분리 후 나머지에만 Gemini 호출
     skip_classes = _default_skip_classes()
-    annotator = Annotator(model=vlm_model)
+    annotator = Annotator(model=vlm_model, lang=lang)
     pic_descriptions: dict[str, str] = {}
     pic_classifications: dict[str, str] = {}
     skipped_pictures: dict[str, dict[str, Any]] = {}
@@ -210,6 +211,7 @@ async def process_pdf(
             doc_name=doc_name,
             picture_self_refs=picture_refs,
             table_self_refs=table_refs,
+            lang=lang,
         )
     else:
         # docling_hybrid (기본)
@@ -218,6 +220,7 @@ async def process_pdf(
             table_descriptions=table_descriptions,
             embed_model=embed_model,
             max_tokens=max_tokens,
+            lang=lang,
         )
         chunk_count = write_hybrid_chunks_jsonl(
             doc=doc,

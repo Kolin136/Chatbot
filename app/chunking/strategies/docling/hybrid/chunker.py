@@ -28,6 +28,7 @@ def build_chunker(
     table_descriptions: dict[str, str],
     embed_model: str = DEFAULT_EMBED_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    lang: str = "ko",
 ) -> HybridChunker:
     tokenizer = HuggingFaceTokenizer(
         tokenizer=AutoTokenizer.from_pretrained(embed_model),
@@ -39,6 +40,7 @@ def build_chunker(
         serializer_provider=AnnotationSerializerProvider(
             pic_descriptions=pic_descriptions,
             table_descriptions=table_descriptions,
+            lang=lang,
         ),
     )
 

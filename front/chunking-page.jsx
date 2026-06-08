@@ -8,6 +8,7 @@ function ChunkingPage({ onGoChat }) {
   const [file, setFile] = useState(null);
   const [doOcr, setDoOcr] = useState(false);
   const [strategy, setStrategy] = useState("docling_hybrid");
+  const [lang, setLang] = useState("ko");  // 문서 언어 — 이미지/표 VLM 설명 언어 결정
 
   // 청킹 진행
   const [jobId, setJobId] = useState(null);
@@ -42,7 +43,7 @@ function ChunkingPage({ onGoChat }) {
     setChunkProgress(0);
     setChunkMessage("업로드 중…");
     try {
-      const up = await window.api.uploadPdf(file, doOcr, strategy);
+      const up = await window.api.uploadPdf(file, doOcr, strategy, lang);
       setJobId(up.job_id);
       setDocName(up.doc_name);
     } catch (e) {
@@ -205,6 +206,8 @@ function ChunkingPage({ onGoChat }) {
               setDoOcr={setDoOcr}
               strategy={strategy}
               setStrategy={setStrategy}
+              lang={lang}
+              setLang={setLang}
               error={chunkError}
               onStart={startChunking}
               onGoEmbedSelect={() => setPhase("embed_select")}
@@ -288,7 +291,7 @@ function ChunkingPage({ onGoChat }) {
 // ============================================================
 // Phase: 업로드
 // ============================================================
-function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, error, onStart, onGoEmbedSelect }) {
+function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, lang, setLang, error, onStart, onGoEmbedSelect }) {
   const [recommending, setRecommending] = useState(false);
   const [recommendation, setRecommendation] = useState(null); // { strategy, reason } | null
   const [recommendError, setRecommendError] = useState(null);
@@ -413,6 +416,43 @@ function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, er
               <div className="strategy-option-text">
                 <div className="strategy-option-name">LangChain Semantic</div>
                 <div className="strategy-option-sub">임베딩 유사도 기반 의미 단위. 느리지만 의미 흐름 우선.</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div className="divider" />
+
+        <div className="strategy-field">
+          <div className="strategy-field-label">문서 언어</div>
+          <div className="strategy-field-desc">
+            문서에 포함된 이미지/표를 VLM으로 설명할 때 이 언어로 생성합니다. (영문 문서면 English 선택)
+          </div>
+          <div className="strategy-options">
+            <label className={"strategy-option" + (lang === "ko" ? " active" : "")}>
+              <input
+                type="radio"
+                name="lang"
+                value="ko"
+                checked={lang === "ko"}
+                onChange={(e) => setLang(e.target.value)}
+              />
+              <div className="strategy-option-text">
+                <div className="strategy-option-name">한국어</div>
+                <div className="strategy-option-sub">이미지/표 설명을 한국어로 생성</div>
+              </div>
+            </label>
+            <label className={"strategy-option" + (lang === "en" ? " active" : "")}>
+              <input
+                type="radio"
+                name="lang"
+                value="en"
+                checked={lang === "en"}
+                onChange={(e) => setLang(e.target.value)}
+              />
+              <div className="strategy-option-text">
+                <div className="strategy-option-name">English</div>
+                <div className="strategy-option-sub">Generate image/table descriptions in English</div>
               </div>
             </label>
           </div>

@@ -34,6 +34,7 @@ class _SuppressPollingAccessLog(logging.Filter):
     POLL_PATHS = (
         "/api/upload/status/",
         "/api/embed/status/",
+        "/api/evaluation/status/",
     )
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -52,6 +53,7 @@ logging.getLogger("uvicorn.access").addFilter(_SuppressPollingAccessLog())
 from app.routers.chat import router as chat_router  # noqa: E402
 from app.routers.collections import router as collections_router  # noqa: E402
 from app.routers.embed import router as embed_router  # noqa: E402
+from app.routers.evaluation import router as evaluation_router  # noqa: E402
 from app.routers.upload import router as upload_router  # noqa: E402
 
 
@@ -73,6 +75,7 @@ app.include_router(chat_router, prefix="/api")
 app.include_router(upload_router, prefix="/api")
 app.include_router(embed_router, prefix="/api")
 app.include_router(collections_router, prefix="/api")
+app.include_router(evaluation_router, prefix="/api")
 
 # 정적 SPA 마운트 — GET / 는 index.html 자동 반환, theme.css/app.jsx 등 상대 경로도 같이 서빙
 app.mount("/", StaticFiles(directory="front", html=True), name="front")

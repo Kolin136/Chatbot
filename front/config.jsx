@@ -23,6 +23,12 @@ window.APP_CONFIG = {
     collections: "/api/collections",                // GET 목록
     deleteCollection: (name) => `/api/collections/${encodeURIComponent(name)}`, // DELETE
     chat: "/api/chat",                              // POST {collection, message, session_id?}
+    evaluation: "/api/evaluation",                  // POST {collection, label, hybrid, eval_set_name, ...}
+    evaluationStatus: (id) => `/api/evaluation/status/${id}`, // GET
+    evaluationResults: "/api/evaluation/results",   // GET 저장된 결과 요약 목록
+    generateEvalset: "/api/evaluation/generate-evalset", // POST multipart {file, n} → {items}
+    evalSets: "/api/evaluation/eval-sets",          // POST 저장 / GET 목록
+    evalSet: (name) => `/api/evaluation/eval-sets/${encodeURIComponent(name)}`, // GET items
   },
 };
 
@@ -32,12 +38,13 @@ window.APP_CONFIG = {
 // ============================================================
 
 window.api = {
-  async uploadPdf(file, doOcr, strategy = "docling_hybrid") {
-    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.uploadPdf(file, doOcr, strategy);
+  async uploadPdf(file, doOcr, strategy = "docling_hybrid", lang = "ko") {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.uploadPdf(file, doOcr, strategy, lang);
     const form = new FormData();
     form.append("file", file);
     form.append("do_ocr", String(doOcr));
     form.append("strategy", strategy);
+    form.append("lang", lang);
     const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.upload, {
       method: "POST",
       body: form,
@@ -137,6 +144,81 @@ window.api = {
     if (!res.ok) throw new Error(`Sessions failed: ${res.status}`);
     return res.json();
   },
+
+  async startEvaluation(payload) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.startEvaluation(payload);
+    const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.evaluation, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      let detail = `Evaluation failed: ${res.status}`;
+      try { const b = await res.json(); if (b?.detail) detail = b.detail; } catch (_) {}
+      throw new Error(detail);
+    }
+    return res.json(); // { eval_job_id, collection, label }
+  },
+
+  async getEvaluationStatus(id) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.getEvaluationStatus(id);
+    const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.evaluationStatus(id));
+    if (!res.ok) throw new Error(`Evaluation status failed: ${res.status}`);
+    return res.json(); // { status, progress, step, message, result?, error? }
+  },
+
+  async listEvaluationResults() {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.listEvaluationResults();
+    const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.evaluationResults);
+    if (!res.ok) throw new Error(`Evaluation results failed: ${res.status}`);
+    return res.json(); // { results: [...] }
+  },
+
+  async generateEvalset(file, n = 12) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.generateEvalset(file, n);
+    const form = new FormData();
+    form.append("file", file);
+    form.append("n", String(n));
+    const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.generateEvalset, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      let detail = `평가셋 생성 실패: ${res.status}`;
+      try { const b = await res.json(); if (b?.detail) detail = b.detail; } catch (_) {}
+      throw new Error(detail);
+    }
+    return res.json(); // { items: [{question, ground_truth}] }
+  },
+
+  async saveEvalSet(name, items) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.saveEvalSet(name, items);
+    const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.evalSets, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, items }),
+    });
+    if (!res.ok) {
+      let detail = `평가셋 저장 실패: ${res.status}`;
+      try { const b = await res.json(); if (b?.detail) detail = b.detail; } catch (_) {}
+      throw new Error(detail);
+    }
+    return res.json(); // { name, count, with_gt }
+  },
+
+  async listEvalSets() {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.listEvalSets();
+    const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.evalSets);
+    if (!res.ok) throw new Error(`평가셋 목록 실패: ${res.status}`);
+    return res.json(); // { eval_sets: [{name, count, with_gt}] }
+  },
+
+  async getEvalSet(name) {
+    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.getEvalSet(name);
+    const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.evalSet(name));
+    if (!res.ok) throw new Error(`평가셋 조회 실패: ${res.status}`);
+    return res.json(); // { name, items }
+  },
 };
 
 // ============================================================
@@ -145,6 +227,9 @@ window.api = {
 const _mockState = {
   jobs: {},      // jobId -> { startedAt, doOcr, docName, progress, step, status }
   embeds: {},    // embedJobId -> { startedAt, collection, jobId, progress, step, status }
+  evals: {},     // evalJobId -> { startedAt, payload }
+  evalResults: [], // 저장된 평가 결과(mock)
+  evalSets: {},  // name -> items (mock 저장 평가셋)
   chunks: null,
   collections: [
     { name: "spring-docs-v1", count: 142, created_at: "2025-05-08" },
@@ -158,13 +243,14 @@ const _mockState = {
 };
 
 window.mockApi = {
-  async uploadPdf(file, doOcr, strategy = "docling_hybrid") {
+  async uploadPdf(file, doOcr, strategy = "docling_hybrid", lang = "ko") {
     await _delay(400);
     const jobId = "job_" + Math.random().toString(36).slice(2, 10);
     _mockState.jobs[jobId] = {
       startedAt: Date.now(),
       doOcr,
       strategy,
+      lang,
       docName: file?.name || "document.pdf",
     };
     return {
@@ -288,6 +374,85 @@ window.mockApi = {
       ],
       session_id: sessionId || "s_" + Math.random().toString(36).slice(2, 8),
     };
+  },
+
+  async startEvaluation(payload) {
+    await _delay(300);
+    const id = "eval_" + Math.random().toString(36).slice(2, 10);
+    _mockState.evals[id] = { startedAt: Date.now(), payload };
+    return { eval_job_id: id, collection: payload.collection, label: payload.label };
+  },
+
+  async getEvaluationStatus(id) {
+    await _delay(120);
+    const job = _mockState.evals[id];
+    if (!job) return { status: "failed", progress: 0, step: "error", message: "Unknown", error: "Job not found" };
+    const elapsed = Date.now() - job.startedAt;
+    const total = 12000; // mock: 12초
+    const progress = Math.min(100, Math.floor((elapsed / total) * 100));
+    if (progress >= 100) {
+      const evalItems = job.payload.eval_set_name
+        ? (_mockState.evalSets[job.payload.eval_set_name] || [])
+        : (job.payload.eval_set || []);
+      const hasGt = evalItems.length > 0 && evalItems.every((r) => (r.ground_truth || "").trim());
+      const metrics = {
+        faithfulness: { mean: 0.82, std: 0.05, n_valid: 10, n_total: 10, run_means: [0.82] },
+        answer_relevancy: { mean: 0.78, std: 0.06, n_valid: 10, n_total: 10, run_means: [0.78] },
+        llm_context_precision_without_reference: { mean: 0.71, std: 0.08, n_valid: 10, n_total: 10, run_means: [0.71] },
+      };
+      if (hasGt) metrics.context_recall = { mean: 0.69, std: 0.07, n_valid: 10, n_total: 10, run_means: [0.69] };
+      const result = {
+        label: job.payload.label,
+        config: { collection_name: job.payload.collection, hybrid: job.payload.hybrid, chunking: job.payload.chunking, storage: job.payload.storage },
+        has_ground_truth: hasGt,
+        metrics,
+        provenance: { n_questions: evalItems.length, repeats: job.payload.repeats || 1, ragas_version: "0.4.3 (mock)", judge: "mock", eval_set_name: job.payload.eval_set_name || "(inline)" },
+        per_sample: [],
+      };
+      if (!_mockState.evalResults.find((r) => r.label === result.label)) _mockState.evalResults.unshift(result);
+      return { status: "completed", progress: 100, step: "done", message: "평가 완료 (mock)", result };
+    }
+    let step = "answering", message = "질문 처리 중 (mock)";
+    if (progress >= 50) { step = "scoring"; message = "RAGAS 채점 중 (mock)"; }
+    return { status: "running", progress, step, message };
+  },
+
+  async listEvaluationResults() {
+    await _delay(120);
+    return { results: _mockState.evalResults };
+  },
+
+  async generateEvalset(file, n = 12) {
+    await _delay(1200);
+    const base = (file?.name || "doc").replace(/\.pdf$/i, "");
+    const items = Array.from({ length: Math.min(n, 5) }, (_, i) => ({
+      question: `(mock) ${base} 문서의 핵심 질문 ${i + 1}은 무엇인가?`,
+      ground_truth: i % 2 === 0 ? `(mock) ${base} 근거에 기반한 모범답안 ${i + 1}.` : "",
+    }));
+    return { items };
+  },
+
+  async saveEvalSet(name, items) {
+    await _delay(200);
+    const with_gt = items.filter((r) => (r.ground_truth || "").trim()).length;
+    const info = { name, count: items.length, with_gt };
+    _mockState.evalSets[name] = items;
+    return info;
+  },
+
+  async listEvalSets() {
+    await _delay(120);
+    return {
+      eval_sets: Object.entries(_mockState.evalSets).map(([name, items]) => ({
+        name, count: items.length,
+        with_gt: items.filter((r) => (r.ground_truth || "").trim()).length,
+      })),
+    };
+  },
+
+  async getEvalSet(name) {
+    await _delay(120);
+    return { name, items: _mockState.evalSets[name] || [] };
   },
 };
 

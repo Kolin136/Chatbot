@@ -103,3 +103,58 @@ class CollectionInfo(BaseModel):
 
 class CollectionsResponse(BaseModel):
     collections: list[CollectionInfo]
+
+
+# ─── Evaluation (RAGAS) ──────────────────────────────────────────────────
+
+
+class EvaluationRequest(BaseModel):
+    collection: str
+    label: str
+    hybrid: bool = False  # True면 하이브리드 검색, False면 dense
+    chunking: str = ""    # 표시용 라벨: hybrid|semantic
+    storage: str = ""     # 표시용 라벨: raw|summary
+    eval_set_name: str | None = None       # 서버 저장 평가셋 이름(우선)
+    eval_set: list[dict[str, Any]] | None = None  # inline 평가셋(name 없을 때)
+    repeats: int = 1      # 채점 반복(심판 변동성)
+
+
+class EvaluationStartResponse(BaseModel):
+    eval_job_id: str
+    collection: str
+    label: str
+
+
+class EvaluationResultsResponse(BaseModel):
+    """저장된 결과 요약 목록(비교 뷰용)."""
+
+    results: list[dict[str, Any]]
+
+
+# ─── 평가셋 (질문+정답) 생성/저장/조회 ──────────────────────────
+
+
+class GeneratedEvalSet(BaseModel):
+    """Gemini가 PDF로 생성한 평가셋(아직 미저장 — 검수 대상)."""
+
+    items: list[dict[str, Any]]  # [{question, ground_truth}]
+
+
+class EvalSetSaveRequest(BaseModel):
+    name: str
+    items: list[dict[str, Any]]
+
+
+class EvalSetInfo(BaseModel):
+    name: str
+    count: int
+    with_gt: int  # 정답이 채워진 항목 수
+
+
+class EvalSetsResponse(BaseModel):
+    eval_sets: list[EvalSetInfo]
+
+
+class EvalSetItemsResponse(BaseModel):
+    name: str
+    items: list[dict[str, Any]]

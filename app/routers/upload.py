@@ -75,6 +75,7 @@ async def _run_chunking_job(
     pdf_path: Path,
     do_ocr: bool,
     strategy: str,
+    lang: str,
 ) -> None:
     """BackgroundTasks에서 실행되는 청킹 작업 (async). JobStore 업데이트."""
     job_store.update(job_id, status="running")
@@ -90,6 +91,7 @@ async def _run_chunking_job(
             output_root=DOCS_ROOT,
             do_ocr=do_ocr,
             strategy=strategy,
+            lang=lang,
             progress_callback=_progress,
         )
         job_store.update(
@@ -124,6 +126,7 @@ async def upload_pdf(
     file: UploadFile = File(...),
     do_ocr: bool = Form(False),
     strategy: str = Form("docling_hybrid"),
+    lang: str = Form("ko"),
 ) -> UploadStartResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="파일 이름이 비어있습니다.")
@@ -136,6 +139,8 @@ async def upload_pdf(
             status_code=400,
             detail=f"지원하지 않는 strategy: {strategy}",
         )
+    if lang not in ("ko", "en"):
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 lang: {lang}")
 
     original_stem = Path(filename).stem
     doc_name = _resolve_doc_name(original_stem)
@@ -153,12 +158,12 @@ async def upload_pdf(
     job_id = str(uuid.uuid4())
     job_store.create(job_id)
     background_tasks.add_task(
-        _run_chunking_job, job_id, saved_path, do_ocr, strategy
+        _run_chunking_job, job_id, saved_path, do_ocr, strategy, lang
     )
 
     logger.info(
-        "업로드 수신: %s → %s (job_id=%s, strategy=%s)",
-        filename, saved_path, job_id, strategy,
+        "업로드 수신: %s → %s (job_id=%s, strategy=%s, lang=%s)",
+        filename, saved_path, job_id, strategy, lang,
     )
     return UploadStartResponse(
         job_id=job_id,

@@ -12,3 +12,13 @@ langchain-text-splitters
 langchain-experimental
 rank_bm25
 kiwipiepy
+
+# ─── RAGAS 평가 하니스 (evaluation/) ───────────────────────────
+# 0.4.3에 핀 고정: 0.2.x는 구 langchain 전제로 본 프로젝트의 langchain 1.x와 충돌.
+# 0.4.3는 langchain 1.x에서 동작하나 (1) instructor가 mistralai 1.x API를 기대 →
+# mistralai<2 강제, (2) sunset된 langchain_community vertexai를 top-level import →
+# evaluation/_ragas_compat.py 셰임을 ragas import 전에 적용해야 함.
+ragas==0.4.3
+langchain-openai
+pandas
+mistralai<2  # ragas→instructor 호환 (앱 미사용 고아 패키지였음)

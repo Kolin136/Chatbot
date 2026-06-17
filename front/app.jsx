@@ -49,6 +49,14 @@ function App() {
             <Icon.MessageSquare w={16} h={16} />
             챗봇 대화
           </button>
+          <button
+            className="nav-tab"
+            data-active={page === "ragas"}
+            onClick={() => setPage("ragas")}
+          >
+            <Icon.Sparkles w={16} h={16} />
+            RAGAS 평가
+          </button>
         </nav>
 
         <div className="topbar-right" />
@@ -56,6 +64,7 @@ function App() {
 
       {page === "chunking" && <ChunkingPage onGoChat={goChat} />}
       {page === "chat" && <ChatPage initialCollection={collectionForChat} />}
+      {page === "ragas" && <RagasPage />}
 
       <TweaksPanel title="Tweaks">
         <TweakSection title="비주얼 테마">

@@ -12,3 +12,9 @@ venv/
 
 # 사용자 업로드 PDF + 청킹 결과 (커밋 X)
 /chunking-results/
+
+# RAGAS 평가 산출물 — PDF 내용(개인/가명정보) 포함 가능 → 커밋 X (PIPA)
+/evaluation/results/
+/evaluation/eval_sets/
+/evaluation/eval_set.json
+/evaluation/eval_set*.json

@@ -41,8 +41,15 @@ STRATEGY_NAME = "langchain_semantic"
 
 # 이미지/표 설명문을 통합 텍스트에 끼워넣을 때 사용할 도입 문구 템플릿.
 # 자연어 흐름 형태로 작성 — SemanticChunker가 의미 단위로 잘 묶도록 유도.
-_PICTURE_PROLOGUE = "이 문서에 그림이 하나 있다. 그 설명: {desc}"
-_TABLE_PROLOGUE = "이 문서에 표가 하나 있다. 그 설명: {desc}"
+_DEFAULT_LANG = "ko"
+_PICTURE_PROLOGUES = {
+    "ko": "이 문서에 그림이 하나 있다. 그 설명: {desc}",
+    "en": "There is a figure in this document. Description: {desc}",
+}
+_TABLE_PROLOGUES = {
+    "ko": "이 문서에 표가 하나 있다. 그 설명: {desc}",
+    "en": "There is a table in this document. Description: {desc}",
+}
 
 
 @dataclass
@@ -78,6 +85,7 @@ def _build_integrated_text(
     doc: DoclingDocument,
     pic_descriptions: dict[str, str],
     table_descriptions: dict[str, str],
+    lang: str = _DEFAULT_LANG,
 ) -> tuple[str, list[_DocItemSpan]]:
     """doc.iterate_items() 순회해 통합 텍스트 + doc_item char span 생성.
 
@@ -86,6 +94,9 @@ def _build_integrated_text(
     - PictureItem → "\\n\\n{도입문구}\\n\\n" (skip된 picture는 제외)
     - TableItem → "\\n\\n{도입문구}\\n{markdown}\\n\\n"
     """
+    pic_prologue = _PICTURE_PROLOGUES.get(lang, _PICTURE_PROLOGUES[_DEFAULT_LANG])
+    table_prologue = _TABLE_PROLOGUES.get(lang, _TABLE_PROLOGUES[_DEFAULT_LANG])
+
     parts: list[str] = []
     spans: list[_DocItemSpan] = []
     cursor = 0
@@ -107,7 +118,7 @@ def _build_integrated_text(
             desc = pic_descriptions.get(item.self_ref, "").strip()
             if not desc:
                 continue  # 설명 없음(skip된 logo 등) → 통합 텍스트에 포함하지 않음
-            text_block = f"\n\n{_PICTURE_PROLOGUE.format(desc=desc)}\n\n"
+            text_block = f"\n\n{pic_prologue.format(desc=desc)}\n\n"
         elif isinstance(item, TableItem):
             desc = table_descriptions.get(item.self_ref, "").strip()
             md = ""
@@ -119,9 +130,9 @@ def _build_integrated_text(
             if not desc and not md:
                 continue
             if desc and md:
-                text_block = f"\n\n{_TABLE_PROLOGUE.format(desc=desc)}\n{md}\n\n"
+                text_block = f"\n\n{table_prologue.format(desc=desc)}\n{md}\n\n"
             elif desc:
-                text_block = f"\n\n{_TABLE_PROLOGUE.format(desc=desc)}\n\n"
+                text_block = f"\n\n{table_prologue.format(desc=desc)}\n\n"
             else:
                 text_block = f"\n\n{md}\n\n"
         else:
@@ -244,10 +255,11 @@ async def write_chunks_jsonl(
     doc_name: str,
     picture_self_refs: set[str],
     table_self_refs: set[str],
+    lang: str = _DEFAULT_LANG,
 ) -> int:
     """SemanticChunker로 청크 생성 후 chunks.jsonl 작성. 청크 개수 반환."""
     integrated_text, spans = _build_integrated_text(
-        doc, pic_descriptions, table_descriptions
+        doc, pic_descriptions, table_descriptions, lang
     )
     if not integrated_text.strip():
         logger.warning("통합 텍스트가 비어있어 청킹할 내용이 없습니다.")

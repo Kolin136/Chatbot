@@ -1,29 +1,63 @@
-# Jarana Chatbot
+# PDF 기반 로컬 RAG 챗봇
 
-FastAPI + ChromaDB + Google Gemini 기반의 RAG 챗봇 서비스. `docs/` 폴더의 문서를 인덱싱해 사용자 질문에 컨텍스트 기반 답변을 제공한다.
+PDF를 업로드하면 자동으로 청킹·임베딩되어 벡터 DB에 적재되고,
+그 위에서 자연어 질의응답이 가능하다. 채팅·임베딩·이미지/표 설명(VLM)은 **로컬 LM Studio**에서
+처리해 외부로 문서 내용이 나가지 않는다. (Gemini는 청킹 전략 추천·평가셋 생성 같은 보조 기능에만 선택적으로 사용)
 
-## 주요 구성
+## 핵심 기능
 
-- **Backend**: FastAPI (`app/`)
-- **Vector Store**: ChromaDB
-- **LLM / Embedding**: Google Gemini (`pydantic-ai` 사용)
-- **Frontend**: 정적 HTML/JS (`front/`)
+- **PDF 업로드 → 자동 파이프라인**: Docling으로 PDF 파싱 → 이미지/표를 VLM으로 자연어 설명 생성 → 청킹 → 임베딩 → ChromaDB 적재
+- **청킹 전략 선택**: Docling Hybrid(구조 기반) / LangChain Semantic(의미 기반) — PDF를 Gemini로 분석해 전략을 **추천**받을 수도 있음
+- **문서 언어 선택(한국어/English)**: 이미지/표 VLM 설명을 문서 언어에 맞춰 생성
+- **저장 방식 선택**: 원본 임베딩 / LLM 요약 임베딩(Multi-Vector — 검색은 요약, 답변은 원본)
+- **하이브리드 검색**: Dense(벡터) + BM25(Sparse) → RRF로 순위 융합. dense 단독도 가능
+- **RAGAS 평가**: 청킹·저장·검색 전략 조합의 RAG 품질을 RAGAS로 채점·비교 (자세한 내용은 [`evaluation/README.md`](evaluation/README.md))
+
+## 기술 스택
+
+| 영역 | 사용 |
+|------|------|
+| Backend | Python 3.10, FastAPI, asyncio, httpx |
+| PDF 파싱 | Docling (layout 비전 + TableFormer + DocumentFigureClassifier, CPU 강제) |
+| 청킹 | Docling HybridChunker / LangChain SemanticChunker |
+| Chat · VLM · 임베딩 | **로컬 LM Studio** (OpenAI 호환): chat/VLM = `google/gemma-4-e4b`, 임베딩 = `text-embedding-multilingual-e5-large-instruct`(1024차원) |
+| LLM 클라이언트 | `pydantic-ai` (Chat/VLM), 자체 `LMStudioEmbedder`(httpx) |
+| Vector Store | ChromaDB (별도 컨테이너) |
+| 검색 | ChromaDB dense + `rank_bm25` + `kiwipiepy`(한국어 토크나이즈) + RRF |
+| 평가 | RAGAS 0.4.3 (로컬 LM Studio 채점) |
+| 보조(선택) | Google Gemini — 청킹 전략 추천 / RAGAS 평가셋 생성 (PDF inline) |
+| Frontend | React 18 UMD CDN + Babel inline (**빌드 없음**, `front/` 정적 서빙) |
+
+## 동작 흐름
+
+```
+PDF 업로드 → Docling 파싱 → 이미지/표 VLM 설명(ko/en) → 청킹(Hybrid|Semantic)
+          → 임베딩(원본|요약) → ChromaDB 컬렉션
+질문 → 검색(dense|hybrid BM25+RRF) → 컨텍스트 + LLM 답변
+(선택) RAGAS 평가 → 전략 조합별 점수 비교
+```
 
 ## 디렉토리 구조
 
 ```
 jarana-chatbot/
-├── app/                # FastAPI 애플리케이션
-│   ├── main.py         # 진입점 (FastAPI 앱)
-│   ├── config.py       # 환경변수 / Chroma / Embedder 초기화
-│   ├── llm.py          # LLM 호출 로직
-│   ├── rag.py          # 검색 증강 생성 (RAG)
-│   ├── models.py       # Pydantic 모델
-│   └── routers/        # API 라우터
-├── front/              # 정적 프론트엔드
-├── docs/               # 인덱싱 대상 문서 (.md, .txt)
-├── scripts/
-│   └── index_docs.py   # 문서 인덱싱 스크립트
+├── app/                      # FastAPI 애플리케이션
+│   ├── main.py               # 진입점 (최상단에서 PyTorch MPS fallback env 설정)
+│   ├── config.py             # .env 단일 진입점 — LM Studio/Chroma/임베더 초기화
+│   ├── rag.py                # 검색 (metadata.raw_text 우선)
+│   ├── retrieval.py          # 하이브리드 검색 (Dense + BM25 + RRF)
+│   ├── llm.py                # 챗 Agent + 대화 히스토리 캐시
+│   ├── models.py             # Pydantic 모델
+│   ├── embeddings/           # LMStudioEmbedder
+│   ├── chunking/             # Docling 변환 + VLM 어노테이터 + 전략 분기
+│   │   ├── annotator.py      # 이미지/표 → VLM 설명 (언어 ko/en)
+│   │   └── strategies/       # docling/hybrid, langchain/semantic
+│   ├── evaluation_jobs.py    # RAGAS 평가 작업 상태 저장소
+│   └── routers/              # upload / embed / chat / collections / evaluation
+├── evaluation/               # RAGAS 오프라인 A/B 평가 하니스 (README 참조)
+├── front/                    # React SPA (빌드 없음, 정적 서빙)
+├── chunking-results/         # 업로드 PDF + 청킹 산출물 (.gitignore)
+├── docs/                     # 프로젝트 문서 (ARCHITECTURE/ADR/PRD/UI_GUIDE/RAGAS_PLAN)
 ├── docker-compose.yml
 ├── Dockerfile
 └── requirements.txt
@@ -31,121 +65,154 @@ jarana-chatbot/
 
 ## 사전 요구사항
 
-- Python 3.12+
-- Docker / Docker Compose (권장)
-- Google Gemini API Key
+- Python 3.10
+- **LM Studio** — chat/VLM 모델(`google/gemma-4-e4b` 등 vision 지원)과 임베딩 모델(`e5-large-instruct`)을 로드하고 로컬 서버(OpenAI 호환) 실행
+- ChromaDB (Docker 컨테이너 권장)
+- (선택) Google Gemini API Key — 청킹 전략 추천 / RAGAS 평가셋 생성에만 필요
 
-## 환경변수 설정
+## 환경변수 (`.env`)
 
-프로젝트 루트에 `.env` 파일 생성:
+`app/config.py`가 `.env` **단일 진입점**으로 모든 외부 서비스 설정을 읽는다. 호스트/포트/모델 ID는 코드에 박지 않고 `.env`만 수정한다.
 
 ```env
-GOOGLE_API_KEY=your_google_api_key_here
+# ─── PyTorch / Docling 가속 ────────────────────────────────────
+# Apple Silicon MPS GPU는 float64 미지원 — 미지원 연산을 CPU로 자동 fallback (안전망).
+PYTORCH_ENABLE_MPS_FALLBACK=1
 
-# 선택 항목 (기본값 있음)
-GEMINI_MODEL=google-gla:gemini-3-flash-preview
-EMBEDDING_MODEL=google-gla:gemini-embedding-2-preview
+# Docling 모델 추론 디바이스. cpu | mps | cuda | auto (default: cpu)
+# CPU 강제 이유: MPS는 일부 Docling 모델 추론에서 float64 텐서로 죽음.
+# GPU 가속 시도하려면 mps 또는 auto 로 변경 (안 죽으면 더 빠름).
+DOCLING_DEVICE=cpu
+
+# ─── LM Studio (OpenAI 호환, 인증 없음) ─────────────────────────
+# 노트북 → 데스크탑 LM Studio 호출.
+# 데스크탑 위치/포트 바뀌면 LMSTUDIO_BASE_URL 한 줄만 수정.
+# base_url 끝의 /v1 까지 포함. 코드는 여기에 "/embeddings", "/chat/completions" 만 붙임.
+# 본인 LM Studio가 떠 있는 호스트 IP/포트로 교체. 예: http://192.168.0.50:1234/v1
+LMSTUDIO_BASE_URL=http://<LM_STUDIO_HOST>:<PORT>/v1
+
+# LM Studio에 로드된 모델 ID (GET {base_url}/models 의 data[].id 와 동일)
+EMBEDDING_MODEL=text-embedding-multilingual-e5-large-instruct
+CHAT_MODEL=google/gemma-4-e4b
+
+# ─── ChromaDB ──────────────────────────────────────────────────
 CHROMA_HOST=localhost
 CHROMA_PORT=8001
+
+# ─── 청킹 ──────────────────────────────────────────────────────
+# 임베딩 모델의 max_context_length(512) 와 정렬
+CHUNK_TOKENIZER_MODEL=sentence-transformers/all-MiniLM-L6-v2
+CHUNK_MAX_TOKENS=512
+
+# Skip할 picture 분류 라벨 (DocumentFigureClassifier-v2.5 라벨, 쉼표 구분)
+# 후보: bar_chart, bar_code, chemistry_markush_structure, chemistry_molecular_structure,
+#       flow_chart, icon, line_chart, logo, map, other, pie_chart, qr_code,
+#       remote_sensing, screenshot, signature, stamp
+SKIP_PICTURE_CLASSES=logo
+
+# LLM 호출 간격(초). LM Studio는 자체 한도 없음 — 0 권장.
+# GPU 부하 분산 차원에서 1~2초 주는 것도 가능.
+CHUNK_VLM_INTERVAL_SEC=0
+EMBED_SUMMARY_INTERVAL_SEC=0
+
+# 청킹 전략 (docling_hybrid | langchain_semantic) — 프론트가 매번 지정하면 무시됨
+CHUNK_STRATEGY=docling_hybrid
+# LangChain SemanticChunker 옵션
+# breakpoint_threshold_type: percentile | standard_deviation | interquartile
+SEMANTIC_BREAKPOINT_TYPE=percentile
+# percentile=95(기본), standard_deviation=3, interquartile=1.5
+SEMANTIC_BREAKPOINT_AMOUNT=95
+# SemanticChunker가 한 번에 임베딩 보낼 문장 수. LM Studio는 한도 없지만 메모리 안정성 차원에서 유지.
+SEMANTIC_EMBED_BATCH_SIZE=32
+
+# ─── 하이브리드 검색 (Dense + BM25 + RRF) ──────────────────────
+# Dense/Sparse 후보 수는 컬렉션 청크 수의 비율로 결정 (clamp 적용).
+# 공식: top_k = clamp(int(N * PERCENT), MIN, MAX)
+#   N=25  → 10 (MIN)
+#   N=100 → 30
+#   N=1000 → 200 (MAX)
+HYBRID_TOPK_PERCENT=0.30
+HYBRID_TOPK_MIN=10
+HYBRID_TOPK_MAX=200
+# Dense + Sparse 두 검색 결과를 합칠 때 쓰는 융합 공식의 상수 — score = Σ 1/(K + rank).
+# 작으면(예: 10) 1등 청크 가중치↑, 크면(예: 60) 상위권 평탄화. 60은 학계 표준 (Cormack et al. 2009).
+HYBRID_RRF_K=60
+
+# 검색 결과 중 LLM 컨텍스트로 전달할 최종 청크 수.
+# 늘리면 답변이 풍부해지지만 토큰 비용↑ + LLM이 헷갈릴 가능성↑. 줄이면 핵심만.
+HYBRID_FINAL_TOP_N=3
+
+# BM25 인덱스를 메모리에 들고 있을 컬렉션 수 (LRU 캐시).
+# 16 = 자주 쓰는 16개 컬렉션은 즉시 검색. 17번째 검색 시 가장 오래 안 쓴 1개가 자동 제거됨.
+# 제거된 컬렉션을 다시 검색하면 BM25 빌드 1~2초 소요. 컬렉션 많고 메모리 여유 있으면 늘려도 OK.
+HYBRID_CACHE_MAXSIZE=16
+
+# ─── 보조 기능 — Gemini (선택) ─────────────────────────────────
+# 청킹 전략 추천 / RAGAS 평가셋 생성에만 사용. 없으면 해당 기능만 비활성(나머지는 정상 동작).
+GOOGLE_API_KEY=...
+RECOMMEND_MODEL=gemini-flash-lite-latest
 ```
 
-| 변수 | 설명 | 기본값 |
-|------|------|--------|
-| `GOOGLE_API_KEY` | Google Gemini API Key (**필수**) | - |
-| `GEMINI_MODEL` | 사용할 Gemini 모델 | `google-gla:gemini-3-flash-preview` |
-| `EMBEDDING_MODEL` | 임베딩 모델 | `google-gla:gemini-embedding-2-preview` |
-| `CHROMA_HOST` | ChromaDB 호스트 | `localhost` |
-| `CHROMA_PORT` | ChromaDB 포트 | `8001` |
+> **필수는 `LMSTUDIO_BASE_URL` · `EMBEDDING_MODEL` · `CHAT_MODEL` 3개뿐**이다(`app/config.py`가 `_require`로 읽어, 없으면 앱이 시작되지 않음).
+> 나머지 키는 전부 기본값이 있어 `.env`에 적지 않아도 동작한다 — 위 값들은 **바꾸고 싶을 때만** 넣으면 된다.
 
-## 실행 방법
+## 실행
 
-### 1. Docker Compose (권장)
-
-ChromaDB와 챗봇 서버를 한 번에 띄운다.
-
-```bash
-docker compose up --build
-```
-
-- 챗봇: http://localhost:8080
-- ChromaDB: http://localhost:8001
-
-종료:
-
-```bash
-docker compose down
-```
-
-데이터 포함 완전 삭제:
-
-```bash
-docker compose down -v
-```
-
-### 2. 로컬 실행
-
-**(1) 의존성 설치**
+### 1) 로컬 실행 (개발)
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate    # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-```
+.venv/bin/pip install -r requirements.txt
 
-**(2) ChromaDB 실행**
-
-```bash
+# ChromaDB (별도 터미널/컨테이너)
 docker run -d --name chromadb -p 8001:8000 chromadb/chroma:latest
+
+# 앱 서버
+.venv/bin/uvicorn app.main:app --reload
 ```
 
-**(3) FastAPI 서버 실행**
+- 접속: http://localhost:8000 (uvicorn 기본 포트)
+- ⚠️ macOS: VS Code 내장 터미널은 로컬 네트워크 권한 누락으로 LAN의 LM Studio 접속이 막힐 수 있다. 일반 Terminal.app/iTerm2 권장.
+
+### 2) Docker Compose
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+docker compose up --build      # 챗봇 :8080, ChromaDB :8001
+docker compose down            # 종료 (-v 추가 시 데이터 삭제)
 ```
 
-- `--reload`: 코드 변경 시 자동 재시작 (개발용)
-- 접속: http://localhost:8080
+`.env`의 `LMSTUDIO_BASE_URL`은 컨테이너에서 접근 가능한 주소여야 한다(LM Studio는 호스트/LAN에서 별도 실행).
 
-## 문서 인덱싱
+## 사용 흐름 (웹 UI)
 
-`docs/` 폴더의 `.md`, `.txt` 파일을 ChromaDB에 인덱싱한다. 챗봇이 RAG로 답변하려면 최초 1회 실행이 필요하다.
-
-```bash
-# 로컬 실행 시
-python -m scripts.index_docs
-
-# Docker 환경에서 실행 시
-docker compose exec chatbot python -m scripts.index_docs
-```
-
-인덱싱 단계:
-1. `docs/` 폴더에서 문서 읽기
-2. 단락 단위로 청크 분할
-3. Gemini로 청크 요약 생성
-4. 임베딩 생성
-5. ChromaDB에 저장
-
-> 참고: 요청 한도를 고려해 청크당 약 13초의 지연이 있어 문서가 많으면 시간이 소요된다.
+1. **청킹 & 임베딩** 탭 — PDF 업로드 → (문서 언어·청킹 전략 선택) → 청킹 → 컬렉션 이름 지정 후 임베딩
+2. **챗봇 대화** 탭 — 컬렉션 선택 후 질문. 하이브리드 검색 토글 가능
+3. **RAGAS 평가** 탭 — 평가셋 생성(Gemini)·검수·저장 → 컬렉션/검색모드 조합별 채점 → 점수 비교 ([`evaluation/README.md`](evaluation/README.md))
 
 ## API 엔드포인트
 
-서버 실행 후 자동 생성되는 OpenAPI 문서:
-
-- Swagger UI: http://localhost:8080/docs
-- ReDoc: http://localhost:8080/redoc
+서버 실행 후 Swagger UI: http://localhost:8000/docs
 
 | Method | Path | 설명 |
 |--------|------|------|
-| `GET` | `/` | 프론트엔드 페이지 |
-| `POST` | `/api/chat` | 채팅 요청 |
+| `GET` | `/` | 프론트엔드 SPA |
+| `POST` | `/api/upload` | PDF 업로드 → 청킹 작업 시작 (`strategy`, `lang`, `do_ocr`) |
+| `GET` | `/api/upload/status/{job_id}` | 청킹 진행 상태 |
+| `POST` | `/api/upload/recommend` | (Gemini) 청킹 전략 추천 |
+| `GET` | `/api/chunkings` · `/api/chunkings/{doc}/chunks` | 청킹 결과/청크 조회 |
+| `POST` | `/api/embed` · `GET /api/embed/status/{id}` | 임베딩 작업 / 상태 |
+| `GET` | `/api/collections` · `DELETE /api/collections/{name}` | 컬렉션 목록 / 삭제 |
+| `POST` | `/api/chat` | 채팅 (RAG, `hybrid` 플래그) |
+| `POST` | `/api/evaluation` ·  `/api/evaluation/generate-evalset` · `/api/evaluation/eval-sets` … | RAGAS 평가/평가셋 |
 
-## 개발 팁
+## 참고 문서
 
-- 라우터는 `app/routers/` 아래에 추가하고 `app/main.py`에서 `include_router`로 등록한다.
-- 프론트 코드는 `front/index.html`, `front/app.js`, `front/style.css`를 직접 수정한다 (정적 마운트됨).
-- ChromaDB 데이터는 Docker volume `chroma_data`에 저장된다.
+- [`CLAUDE.md`](CLAUDE.md) — 아키텍처 규칙·함정·개발 프로세스 (소스 오브 트루스)
+- [`docs/`](docs/) — ARCHITECTURE / ADR / PRD / UI_GUIDE / RAGAS_PLAN
+- [`evaluation/README.md`](evaluation/README.md) — RAGAS 평가 하니스 사용법
 
-## 라이선스
+## 알려진 함정
 
-추후 추가 예정.
+- **임베딩 모델 max_context=512 토큰** — 청크가 길면 LM Studio가 자동으로 잘라 임베딩한다. (답변은 `metadata.raw_text` 우선 사용이라 영향 적음)
+- **청크 토큰 한도(`CHUNK_MAX_TOKENS=512`)** — HybridChunker가 이를 넘는 청크를 분할한다. 한국어는 영어 토크나이저(MiniLM)에서 토큰을 많이 써서, 긴 한국어 설명이 여러 청크로 쪼개질 수 있다.
+- **LM Studio rerank API 없음** — reranker는 별도 처리 필요.

@@ -85,6 +85,7 @@ async def process_pdf(
     do_ocr: bool = False,
     strategy: ChunkStrategy = DEFAULT_STRATEGY,
     lang: str = "ko",
+    skip_media: bool = False,
     vlm_model: Any = None,
     embed_model: str = DEFAULT_EMBED_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
@@ -96,6 +97,9 @@ async def process_pdf(
       `process_pdf` 는 그 위치(혹은 임의 위치)의 PDF를 입력으로 받아
       `output_root/<stem>/` 폴더에 청킹 결과를 떨어뜨림.
     - `strategy`: "docling_hybrid"(기본) | "langchain_semantic".
+    - `skip_media`: True면 이미지/표를 VLM 설명문으로 변환하지 않고 청크 텍스트에서도
+      완전히 제외. 원본 이미지/표 파일 저장과 mapping.json 기록은 그대로 유지.
+      (RAG 평가 대조군 생성용 — VLM 호출이 없어 청킹이 크게 빨라짐)
     - `progress_callback(progress, step, message)` 가 주어지면 단계별로 호출.
     """
     cb: ProgressCallback = progress_callback or _noop
@@ -105,7 +109,10 @@ async def process_pdf(
     doc_name = pdf_path.stem
     out_dir = output_root / doc_name
 
-    logger.info("=== 처리 시작: %s (strategy=%s) ===", pdf_path.name, strategy)
+    logger.info(
+        "=== 처리 시작: %s (strategy=%s, skip_media=%s) ===",
+        pdf_path.name, strategy, skip_media,
+    )
     logger.info("출력 디렉토리: %s", out_dir)
     cb(0, "convert", "PDF 변환 중...")
 
@@ -121,7 +128,8 @@ async def process_pdf(
 
     # 2. picture classification 확인 → skip 대상 분리 후 나머지에만 Gemini 호출
     skip_classes = _default_skip_classes()
-    annotator = Annotator(model=vlm_model, lang=lang)
+    # skip_media면 VLM을 아예 쓰지 않으므로 Annotator를 만들지 않는다.
+    annotator = None if skip_media else Annotator(model=vlm_model, lang=lang)
     pic_descriptions: dict[str, str] = {}
     pic_classifications: dict[str, str] = {}
     skipped_pictures: dict[str, dict[str, Any]] = {}
@@ -141,6 +149,10 @@ async def process_pdf(
                 "page_no": page,
             }
             continue
+        if skip_media:
+            # 분류/skip 판정만 하고 VLM 설명 생성은 건너뜀.
+            # pic_classifications는 위에서 이미 채워졌고 mapping.json에 그대로 쓰인다.
+            continue
         img = pic.get_image(doc)
         if img is None:
             continue
@@ -151,7 +163,15 @@ async def process_pdf(
 
     # 3. 표 → 자연어 설명문
     table_descriptions: dict[str, str] = {}
-    for i, tbl in enumerate(doc.tables, start=1):
+    if skip_media:
+        # 이 루프의 유일한 목적이 VLM 설명 생성이므로 통째로 생략.
+        # 표 파일 저장은 save_tables가 자체적으로 export를 수행하므로 영향 없음.
+        logger.info(
+            "skip_media=True — 이미지/표 VLM 설명 생성 생략 (이미지 %d개, 표 %d개)",
+            n_pics, n_tbls,
+        )
+        cb(65, "skip_media", f"이미지·표 건너뜀 (VLM 미사용, 그림 {n_pics}·표 {n_tbls})")
+    for i, tbl in enumerate([] if skip_media else doc.tables, start=1):
         try:
             df = tbl.export_to_dataframe(doc=doc)
             md = df.to_markdown(index=False)
@@ -212,6 +232,7 @@ async def process_pdf(
             picture_self_refs=picture_refs,
             table_self_refs=table_refs,
             lang=lang,
+            skip_media=skip_media,
         )
     else:
         # docling_hybrid (기본)
@@ -221,6 +242,7 @@ async def process_pdf(
             embed_model=embed_model,
             max_tokens=max_tokens,
             lang=lang,
+            skip_media=skip_media,
         )
         chunk_count = write_hybrid_chunks_jsonl(
             doc=doc,

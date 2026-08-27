@@ -86,6 +86,7 @@ def _build_integrated_text(
     pic_descriptions: dict[str, str],
     table_descriptions: dict[str, str],
     lang: str = _DEFAULT_LANG,
+    skip_media: bool = False,
 ) -> tuple[str, list[_DocItemSpan]]:
     """doc.iterate_items() 순회해 통합 텍스트 + doc_item char span 생성.
 
@@ -93,6 +94,9 @@ def _build_integrated_text(
     - TextItem/ListItem → "{text}\\n"
     - PictureItem → "\\n\\n{도입문구}\\n\\n" (skip된 picture는 제외)
     - TableItem → "\\n\\n{도입문구}\\n{markdown}\\n\\n"
+
+    skip_media=True면 PictureItem/TableItem을 통째로 제외 — 설명문도 markdown 표도
+    통합 텍스트에 넣지 않는다 (본문 텍스트만 남김).
     """
     pic_prologue = _PICTURE_PROLOGUES.get(lang, _PICTURE_PROLOGUES[_DEFAULT_LANG])
     table_prologue = _TABLE_PROLOGUES.get(lang, _TABLE_PROLOGUES[_DEFAULT_LANG])
@@ -115,11 +119,15 @@ def _build_integrated_text(
                 continue
             text_block = body + "\n"
         elif isinstance(item, PictureItem):
+            if skip_media:
+                continue
             desc = pic_descriptions.get(item.self_ref, "").strip()
             if not desc:
                 continue  # 설명 없음(skip된 logo 등) → 통합 텍스트에 포함하지 않음
             text_block = f"\n\n{pic_prologue.format(desc=desc)}\n\n"
         elif isinstance(item, TableItem):
+            if skip_media:
+                continue
             desc = table_descriptions.get(item.self_ref, "").strip()
             md = ""
             try:
@@ -256,13 +264,20 @@ async def write_chunks_jsonl(
     picture_self_refs: set[str],
     table_self_refs: set[str],
     lang: str = _DEFAULT_LANG,
+    skip_media: bool = False,
 ) -> int:
     """SemanticChunker로 청크 생성 후 chunks.jsonl 작성. 청크 개수 반환."""
     integrated_text, spans = _build_integrated_text(
-        doc, pic_descriptions, table_descriptions, lang
+        doc, pic_descriptions, table_descriptions, lang, skip_media
     )
     if not integrated_text.strip():
-        logger.warning("통합 텍스트가 비어있어 청킹할 내용이 없습니다.")
+        if skip_media:
+            logger.warning(
+                "통합 텍스트가 비어있어 청킹할 내용이 없습니다 "
+                "(skip_media=True — 그림/표를 제외했더니 본문이 남지 않음)."
+            )
+        else:
+            logger.warning("통합 텍스트가 비어있어 청킹할 내용이 없습니다.")
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text("", encoding="utf-8")
         return 0

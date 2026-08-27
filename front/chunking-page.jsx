@@ -9,6 +9,7 @@ function ChunkingPage({ onGoChat }) {
   const [doOcr, setDoOcr] = useState(false);
   const [strategy, setStrategy] = useState("docling_hybrid");
   const [lang, setLang] = useState("ko");  // 문서 언어 — 이미지/표 VLM 설명 언어 결정
+  const [skipMedia, setSkipMedia] = useState(false);  // 기본 OFF — 이미지/표를 청크에 포함
 
   // 청킹 진행
   const [jobId, setJobId] = useState(null);
@@ -43,7 +44,7 @@ function ChunkingPage({ onGoChat }) {
     setChunkProgress(0);
     setChunkMessage("업로드 중…");
     try {
-      const up = await window.api.uploadPdf(file, doOcr, strategy, lang);
+      const up = await window.api.uploadPdf(file, doOcr, strategy, lang, skipMedia);
       setJobId(up.job_id);
       setDocName(up.doc_name);
     } catch (e) {
@@ -208,6 +209,8 @@ function ChunkingPage({ onGoChat }) {
               setStrategy={setStrategy}
               lang={lang}
               setLang={setLang}
+              skipMedia={skipMedia}
+              setSkipMedia={setSkipMedia}
               error={chunkError}
               onStart={startChunking}
               onGoEmbedSelect={() => setPhase("embed_select")}
@@ -291,7 +294,7 @@ function ChunkingPage({ onGoChat }) {
 // ============================================================
 // Phase: 업로드
 // ============================================================
-function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, lang, setLang, error, onStart, onGoEmbedSelect }) {
+function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, lang, setLang, skipMedia, setSkipMedia, error, onStart, onGoEmbedSelect }) {
   const [recommending, setRecommending] = useState(false);
   const [recommendation, setRecommendation] = useState(null); // { strategy, reason } | null
   const [recommendError, setRecommendError] = useState(null);
@@ -465,6 +468,13 @@ function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, la
           onChange={setDoOcr}
           title="OCR 사용"
           description="스캔된 이미지·그림 안의 글자도 인식해서 텍스트로 변환합니다. 일반 텍스트 PDF만 있다면 꺼두면 더 빨라요."
+        />
+
+        <ToggleField
+          on={skipMedia}
+          onChange={setSkipMedia}
+          title="이미지·표 제외"
+          description="그림과 표를 청크에서 완전히 빼고 본문 텍스트만 사용합니다. AI 설명 생성을 건너뛰어 청킹이 훨씬 빨라져요. 이미지·표가 검색 품질에 얼마나 기여하는지 비교하는 실험용입니다."
         />
 
         {error && (

@@ -76,6 +76,7 @@ async def _run_chunking_job(
     do_ocr: bool,
     strategy: str,
     lang: str,
+    skip_media: bool = False,
 ) -> None:
     """BackgroundTasks에서 실행되는 청킹 작업 (async). JobStore 업데이트."""
     job_store.update(job_id, status="running")
@@ -92,6 +93,7 @@ async def _run_chunking_job(
             do_ocr=do_ocr,
             strategy=strategy,
             lang=lang,
+            skip_media=skip_media,
             progress_callback=_progress,
         )
         job_store.update(
@@ -107,6 +109,7 @@ async def _run_chunking_job(
                 "picture_count": result.picture_count,
                 "table_count": result.table_count,
                 "strategy": result.strategy,
+                "skip_media": skip_media,
             },
         )
     except Exception as exc:
@@ -127,6 +130,7 @@ async def upload_pdf(
     do_ocr: bool = Form(False),
     strategy: str = Form("docling_hybrid"),
     lang: str = Form("ko"),
+    skip_media: bool = Form(False),
 ) -> UploadStartResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="파일 이름이 비어있습니다.")
@@ -158,12 +162,18 @@ async def upload_pdf(
     job_id = str(uuid.uuid4())
     job_store.create(job_id)
     background_tasks.add_task(
-        _run_chunking_job, job_id, saved_path, do_ocr, strategy, lang
+        _run_chunking_job,
+        job_id=job_id,
+        pdf_path=saved_path,
+        do_ocr=do_ocr,
+        strategy=strategy,
+        lang=lang,
+        skip_media=skip_media,
     )
 
     logger.info(
-        "업로드 수신: %s → %s (job_id=%s, strategy=%s, lang=%s)",
-        filename, saved_path, job_id, strategy, lang,
+        "업로드 수신: %s → %s (job_id=%s, strategy=%s, lang=%s, skip_media=%s)",
+        filename, saved_path, job_id, strategy, lang, skip_media,
     )
     return UploadStartResponse(
         job_id=job_id,

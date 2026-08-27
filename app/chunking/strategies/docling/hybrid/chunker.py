@@ -29,6 +29,7 @@ def build_chunker(
     embed_model: str = DEFAULT_EMBED_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     lang: str = "ko",
+    skip_media: bool = False,
 ) -> HybridChunker:
     tokenizer = HuggingFaceTokenizer(
         tokenizer=AutoTokenizer.from_pretrained(embed_model),
@@ -41,6 +42,7 @@ def build_chunker(
             pic_descriptions=pic_descriptions,
             table_descriptions=table_descriptions,
             lang=lang,
+            skip_media=skip_media,
         ),
     )
 
@@ -96,10 +98,16 @@ def write_chunks_jsonl(
 ) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
+    skipped_empty = 0
     with out_path.open("w", encoding="utf-8") as fp:
-        for i, chunk in enumerate(chunker.chunk(dl_doc=doc)):
+        for chunk in chunker.chunk(dl_doc=doc):
+            # 빈 청크 제외 — skip_media로 그림/표를 비우면 텍스트가 없는 청크가 생길 수 있음.
+            # chunk_id 인덱스는 실제로 기록한 청크 기준으로 매긴다.
+            if not (getattr(chunk, "text", "") or "").strip():
+                skipped_empty += 1
+                continue
             record = _build_chunk_record(
-                index=i,
+                index=count,
                 chunk=chunk,
                 chunker=chunker,
                 doc_name=doc_name,
@@ -108,5 +116,7 @@ def write_chunks_jsonl(
             )
             fp.write(json.dumps(record, ensure_ascii=False) + "\n")
             count += 1
+    if skipped_empty:
+        logger.info("빈 청크 %d개 제외 (텍스트 없음)", skipped_empty)
     logger.info("청크 저장 완료: %s (%d개)", out_path, count)
     return count

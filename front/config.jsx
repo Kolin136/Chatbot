@@ -13,7 +13,7 @@ window.APP_CONFIG = {
 
   // 엔드포인트
   ENDPOINTS: {
-    upload: "/api/upload",                          // POST multipart {file, do_ocr}
+    upload: "/api/upload",                          // POST multipart {file, do_ocr, strategy, lang, skip_media}
     recommend: "/api/upload/recommend",              // POST multipart {file} → { strategy, reason }
     uploadStatus: (jobId) => `/api/upload/status/${jobId}`, // GET
     chunks: (docName) => `/api/chunkings/${encodeURIComponent(docName)}/chunks`,  // GET (청크 목록)
@@ -38,13 +38,15 @@ window.APP_CONFIG = {
 // ============================================================
 
 window.api = {
-  async uploadPdf(file, doOcr, strategy = "docling_hybrid", lang = "ko") {
-    if (window.APP_CONFIG.USE_MOCK) return window.mockApi.uploadPdf(file, doOcr, strategy, lang);
+  async uploadPdf(file, doOcr, strategy = "docling_hybrid", lang = "ko", skipMedia = false) {
+    if (window.APP_CONFIG.USE_MOCK)
+      return window.mockApi.uploadPdf(file, doOcr, strategy, lang, skipMedia);
     const form = new FormData();
     form.append("file", file);
     form.append("do_ocr", String(doOcr));
     form.append("strategy", strategy);
     form.append("lang", lang);
+    form.append("skip_media", String(skipMedia));
     const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.upload, {
       method: "POST",
       body: form,
@@ -243,7 +245,7 @@ const _mockState = {
 };
 
 window.mockApi = {
-  async uploadPdf(file, doOcr, strategy = "docling_hybrid", lang = "ko") {
+  async uploadPdf(file, doOcr, strategy = "docling_hybrid", lang = "ko", skipMedia = false) {
     await _delay(400);
     const jobId = "job_" + Math.random().toString(36).slice(2, 10);
     _mockState.jobs[jobId] = {
@@ -251,6 +253,7 @@ window.mockApi = {
       doOcr,
       strategy,
       lang,
+      skipMedia,
       docName: file?.name || "document.pdf",
     };
     return {

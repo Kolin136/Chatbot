@@ -24,6 +24,7 @@ function ChunkingPage({ onGoChat }) {
   const [chunkModal, setChunkModal] = useState(false);
   const [chunks, setChunks] = useState(null);
   const [chunksLoading, setChunksLoading] = useState(false);
+  const [chunkEditing, setChunkEditing] = useState(false);  // 편집 중이면 모달 실수 닫힘 방지
 
   // 임베딩
   const [collectionName, setCollectionName] = useState("");
@@ -101,6 +102,24 @@ function ChunkingPage({ onGoChat }) {
     } finally {
       setChunksLoading(false);
     }
+  };
+
+  // 청크 수정 저장 — 서버 반영 후 로컬 state 갱신 (모달을 닫았다 열어도 유지)
+  const handleChunkSave = async (chunkId, contextualizedText) => {
+    const updated = await window.api.updateChunk(docName, chunkId, contextualizedText);
+    const nextText = (updated && updated.contextualized_text) || contextualizedText;
+    setChunks((prev) =>
+      (prev || []).map((c) =>
+        c.chunk_id === chunkId ? { ...c, contextualized_text: nextText } : c
+      )
+    );
+  };
+
+  // 편집 중이면 확인 후 닫기 — backdrop 클릭 실수로 입력이 날아가지 않게
+  const closeChunkModal = () => {
+    if (chunkEditing && !window.confirm("수정 중인 내용이 있어요. 저장하지 않고 닫을까요?")) return;
+    setChunkEditing(false);
+    setChunkModal(false);
   };
 
   // ============== 임베딩 시작 ==============
@@ -274,17 +293,21 @@ function ChunkingPage({ onGoChat }) {
 
       <Modal
         open={chunkModal}
-        onClose={() => setChunkModal(false)}
+        onClose={closeChunkModal}
         title={`청크 결과 미리보기 · ${docName || ""}`}
         width={980}
         footer={
-          <Button variant="ghost" onClick={() => setChunkModal(false)}>닫기</Button>
+          <Button variant="ghost" onClick={closeChunkModal}>닫기</Button>
         }
       >
         {chunksLoading ? (
           <div className="chunk-loading">청크 불러오는 중…</div>
         ) : chunks ? (
-          <ChunkViewer chunks={chunks} />
+          <ChunkViewer
+            chunks={chunks}
+            onSave={docName ? handleChunkSave : null}
+            onEditingChange={setChunkEditing}
+          />
         ) : null}
       </Modal>
     </div>

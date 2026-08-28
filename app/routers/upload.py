@@ -1,9 +1,13 @@
 """PDF 업로드 + 비동기 청킹 라우터."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import re
+import shutil
+import tempfile
 import unicodedata
 import uuid
 from datetime import datetime
@@ -23,6 +27,7 @@ from app.models import (
     ChunkingInfo,
     ChunkingsResponse,
     ChunksResponse,
+    ChunkUpdateRequest,
     JobStatus,
     RecommendResponse,
     UploadStartResponse,
@@ -34,6 +39,74 @@ router = APIRouter()
 
 DOCS_ROOT = Path("chunking-results")
 _VALID_STEM_PATTERN = re.compile(r"[^A-Za-z0-9가-힣_\-\.\[\] ]")
+
+_chunks_write_lock = asyncio.Lock()
+"""chunks.jsonl 수정 직렬화. 같은 파일에 동시 PATCH가 들어와도 read-modify-write가 겹치지 않게."""
+
+
+def _resolve_chunks_path(doc_name: str) -> Path:
+    """doc_name → chunking-results/<doc_name>/chunks.jsonl (경로 순회 차단).
+
+    _sanitize_stem은 '.'을 허용해 '..'을 못 막으므로 여기서 별도 검증한다.
+    macOS 파일시스템 NFD 파일명 대응으로 NFC 정규화도 함께 수행.
+    """
+    name = unicodedata.normalize("NFC", (doc_name or "").strip())
+    if not name:
+        raise HTTPException(status_code=400, detail="doc_name이 비어있습니다.")
+    if "/" in name or "\\" in name or ".." in name or Path(name).is_absolute():
+        raise HTTPException(status_code=400, detail="잘못된 doc_name입니다.")
+
+    out_dir = DOCS_ROOT / name
+    # 심볼릭 링크 등으로 DOCS_ROOT를 벗어나지 않는지 최종 확인
+    try:
+        resolved = out_dir.resolve()
+        if not resolved.is_relative_to(DOCS_ROOT.resolve()):
+            raise HTTPException(status_code=400, detail="잘못된 doc_name입니다.")
+    except (OSError, ValueError):
+        raise HTTPException(status_code=400, detail="잘못된 doc_name입니다.")
+
+    if not out_dir.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=f"청킹 결과 디렉터리를 찾을 수 없습니다: {out_dir}",
+        )
+    chunks_path = out_dir / "chunks.jsonl"
+    if not chunks_path.exists():
+        raise HTTPException(status_code=404, detail="chunks.jsonl을 찾을 수 없습니다.")
+    return chunks_path
+
+
+def _read_chunks(chunks_path: Path) -> list[dict]:
+    """chunks.jsonl → dict 리스트. 빈 줄 skip."""
+    chunks: list[dict] = []
+    with chunks_path.open("r", encoding="utf-8") as fp:
+        for line in fp:
+            line = line.strip()
+            if not line:
+                continue
+            chunks.append(json.loads(line))
+    return chunks
+
+
+def _write_chunks_atomic(chunks_path: Path, chunks: list[dict]) -> None:
+    """전량 재작성 — 같은 디렉터리 임시 파일에 쓴 뒤 os.replace로 교체.
+
+    쓰기 도중 프로세스가 죽어도 반쪽 파일이 남지 않는다.
+    기존 writer 규약(ensure_ascii=False + 줄 끝 개행) 동일.
+    """
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(chunks_path.parent), prefix=".chunks-", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fp:
+            for c in chunks:
+                fp.write(json.dumps(c, ensure_ascii=False) + "\n")
+            fp.flush()
+            os.fsync(fp.fileno())
+        os.replace(tmp_name, chunks_path)
+    except Exception:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
 
 
 def _fix_multipart_filename(name: str) -> str:
@@ -315,26 +388,63 @@ def _read_chunking_info(doc_dir: Path, chunks_path: Path) -> ChunkingInfo:
 
 @router.get("/chunkings/{doc_name}/chunks", response_model=ChunksResponse)
 async def get_chunks(doc_name: str) -> ChunksResponse:
-    """`docs/<doc_name>/chunks.jsonl` 을 청크 리스트로 반환. job_store 의존성 없음."""
-    if not doc_name.strip():
-        raise HTTPException(status_code=400, detail="doc_name이 비어있습니다.")
+    """`chunking-results/<doc_name>/chunks.jsonl` 을 청크 리스트로 반환."""
+    chunks_path = _resolve_chunks_path(doc_name)
+    return ChunksResponse(chunks=_read_chunks(chunks_path))
 
-    out_dir = DOCS_ROOT / doc_name
-    if not out_dir.is_dir():
+
+@router.patch("/chunkings/{doc_name}/chunks")
+async def update_chunk(doc_name: str, req: ChunkUpdateRequest) -> dict:
+    """청크 1개의 contextualized_text 를 수정하고 chunks.jsonl 에 반영.
+
+    임베딩 전에 사람이 청크를 교정할 수 있게 하는 용도.
+    (예: 이미지 설명이 엉뚱한 섹션 청크에 붙은 경우 잘라내기)
+
+    - contextualized_text 만 수정 — 임베딩 입력이자 ChromaDB documents/raw_text 의
+      출처이기 때문. 원본 text 필드는 추적성을 위해 보존한다.
+    - 최초 1회에 한해 chunks.jsonl.bak 으로 원본 백업 (이미 있으면 덮어쓰지 않음).
+    - 전량 원자적 재작성.
+
+    chunk_id 는 body 로 받는다 — "doc#00000" 의 '#' 가 URL에서 잘리기 때문.
+    """
+    chunk_id = req.chunk_id
+    text = req.contextualized_text
+    if not chunk_id.strip():
+        raise HTTPException(status_code=400, detail="chunk_id가 비어있습니다.")
+    if not text or not text.strip():
         raise HTTPException(
-            status_code=404,
-            detail=f"청킹 결과 디렉터리를 찾을 수 없습니다: {out_dir}",
+            status_code=400,
+            detail="contextualized_text가 비어있습니다. 빈 청크는 임베딩할 수 없습니다.",
         )
 
-    chunks_path = out_dir / "chunks.jsonl"
-    if not chunks_path.exists():
-        raise HTTPException(status_code=404, detail="chunks.jsonl을 찾을 수 없습니다.")
+    chunks_path = _resolve_chunks_path(doc_name)
 
-    chunks: list[dict] = []
-    with chunks_path.open("r", encoding="utf-8") as fp:
-        for line in fp:
-            line = line.strip()
-            if not line:
-                continue
-            chunks.append(json.loads(line))
-    return ChunksResponse(chunks=chunks)
+    async with _chunks_write_lock:
+        try:
+            chunks = _read_chunks(chunks_path)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=500, detail=f"chunks.jsonl 파싱 실패: {exc}"
+            )
+
+        target_idx = next(
+            (i for i, c in enumerate(chunks) if c.get("chunk_id") == chunk_id), None
+        )
+        if target_idx is None:
+            raise HTTPException(
+                status_code=404, detail=f"chunk_id를 찾을 수 없습니다: {chunk_id}"
+            )
+
+        # 최초 편집 시에만 원본 백업 — 여러 번 고쳐도 최초 청킹 결과가 남도록.
+        backup_path = chunks_path.with_suffix(chunks_path.suffix + ".bak")
+        if not backup_path.exists():
+            shutil.copy2(chunks_path, backup_path)
+            logger.info("청크 원본 백업 생성: %s", backup_path)
+
+        chunks[target_idx]["contextualized_text"] = text
+        _write_chunks_atomic(chunks_path, chunks)
+
+    logger.info(
+        "청크 수정: doc=%s chunk_id=%s (%d자)", doc_name, chunk_id, len(text)
+    )
+    return chunks[target_idx]

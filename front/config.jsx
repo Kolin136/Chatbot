@@ -16,7 +16,7 @@ window.APP_CONFIG = {
     upload: "/api/upload",                          // POST multipart {file, do_ocr, strategy, lang, skip_media}
     recommend: "/api/upload/recommend",              // POST multipart {file} → { strategy, reason }
     uploadStatus: (jobId) => `/api/upload/status/${jobId}`, // GET
-    chunks: (docName) => `/api/chunkings/${encodeURIComponent(docName)}/chunks`,  // GET (청크 목록)
+    chunks: (docName) => `/api/chunkings/${encodeURIComponent(docName)}/chunks`,  // GET 청크 목록 / PATCH 청크 수정 {chunk_id, contextualized_text}
     chunkings: "/api/chunkings",                    // GET 청킹 결과 디렉터리 목록
     embed: "/api/embed",                            // POST {doc_name, collection_name}
     embedStatus: (jobId) => `/api/embed/status/${jobId}`,   // GET
@@ -86,6 +86,27 @@ window.api = {
     const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.chunks(docName));
     if (!res.ok) throw new Error(`Chunks failed: ${res.status}`);
     return res.json();
+  },
+
+  // 청크 1개의 contextualized_text 수정 → chunks.jsonl 반영.
+  // chunk_id 는 "doc#00000" 형태라 URL이 아닌 body로 보낸다 ('#'가 URL에서 잘림).
+  async updateChunk(docName, chunkId, contextualizedText) {
+    if (window.APP_CONFIG.USE_MOCK)
+      return window.mockApi.updateChunk(docName, chunkId, contextualizedText);
+    const res = await fetch(window.APP_CONFIG.API_BASE + window.APP_CONFIG.ENDPOINTS.chunks(docName), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chunk_id: chunkId, contextualized_text: contextualizedText }),
+    });
+    if (!res.ok) {
+      let detail = `저장 실패 (${res.status})`;
+      try {
+        const j = await res.json();
+        if (j && j.detail) detail = j.detail;
+      } catch (e) { /* 응답이 JSON이 아니면 기본 메시지 유지 */ }
+      throw new Error(detail);
+    }
+    return res.json(); // 갱신된 청크 dict
   },
 
   async listChunkings() {
@@ -310,6 +331,13 @@ window.mockApi = {
   async getChunks(jobId) {
     await _delay(300);
     return { chunks: _sampleChunks(jobId) };
+  },
+
+  async updateChunk(docName, chunkId, contextualizedText) {
+    await _delay(250);
+    if (!contextualizedText || !contextualizedText.trim())
+      throw new Error("contextualized_text가 비어있습니다.");
+    return { chunk_id: chunkId, contextualized_text: contextualizedText };
   },
 
   async startEmbedding(jobId, collectionName, summarize = false) {

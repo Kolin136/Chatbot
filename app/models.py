@@ -80,6 +80,20 @@ class RecommendResponse(BaseModel):
 # ─── Embedding ───────────────────────────────────────────────────────────
 
 
+class ChunkUpdateRequest(BaseModel):
+    """청크 1개의 컨텍스트화된 텍스트 수정 요청.
+
+    contextualized_text 만 수정 대상 — 임베딩 입력이자 ChromaDB documents/raw_text의
+    출처이기 때문(embed.py). 원본 text 필드는 추적성을 위해 건드리지 않는다.
+
+    chunk_id 를 URL 경로가 아닌 body 로 받는 이유: chunk_id 는 "doc#00000" 형태라
+    '#' 가 URL 프래그먼트 구분자로 잘린다. 인코딩 실수 한 번에 조용히 깨지는 것을 피한다.
+    """
+
+    chunk_id: str
+    contextualized_text: str
+
+
 class EmbedRequest(BaseModel):
     doc_name: str
     collection_name: str

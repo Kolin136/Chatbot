@@ -41,18 +41,18 @@ def _run_in_main_loop(coro):
     - 현재 스레드에 실행 중인 loop이 있으면 → 그 안에서 await로 풀어야 함 (호출자 책임)
     - 어디에도 실행 loop이 없으면 → asyncio.run 으로 새로 실행
     """
+    # 현재 스레드에 실행 중인 loop 이 있는지 확인.
+    # 있다면 sync 메서드가 async 컨텍스트 안에서 직접 호출된 것 → 잘못된 사용.
+    # (이전 구현은 raise 를 같은 블록의 except RuntimeError 가 삼켜 가드가 죽어 있었다)
     try:
-        # 현재 스레드의 실행 중인 loop 확인
-        current = asyncio.get_running_loop()
-        # 여기까지 왔다는 건 sync 메서드가 async 컨텍스트 안에서 직접 호출됐다는 뜻
-        # → 잘못된 사용. async 메서드(aembed_*)를 써야 함.
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass  # 실행 중 loop 없음 — 정상 경로(별도 스레드에서 호출됨)
+    else:
         raise RuntimeError(
             "sync embed_documents/embed_query는 실행 중인 event loop 안에서 직접 호출하면 안 됨. "
             "async 메서드(aembed_documents/aembed_query)를 사용하거나 별도 스레드에서 호출하세요."
         )
-    except RuntimeError:
-        # 현재 스레드엔 실행 중 loop 없음 → 메인 loop 찾기 또는 새로 만들기
-        pass
 
     # 메인 loop이 동작 중이면 거기로 던지기
     main_loop = _get_main_loop()

@@ -444,6 +444,19 @@ function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, la
                 <div className="strategy-option-sub">임베딩 유사도 기반 의미 단위. 느리지만 의미 흐름 우선.</div>
               </div>
             </label>
+            <label className={"strategy-option" + (strategy === "fixed_size" ? " active" : "")}>
+              <input
+                type="radio"
+                name="strategy"
+                value="fixed_size"
+                checked={strategy === "fixed_size"}
+                onChange={(e) => setStrategy(e.target.value)}
+              />
+              <div className="strategy-option-text">
+                <div className="strategy-option-name">고정 크기</div>
+                <div className="strategy-option-sub">구조·의미를 보지 않고 일정 토큰 수로 균등 분할. 가장 빠르며, 다른 전략의 효과를 재는 기준선.</div>
+              </div>
+            </label>
           </div>
         </div>
 
@@ -627,6 +640,7 @@ function formatCreatedAt(iso) {
 function labelForStrategy(s) {
   if (s === "docling_hybrid") return "Docling Hybrid";
   if (s === "langchain_semantic") return "LangChain Semantic";
+  if (s === "fixed_size") return "고정 크기";
   return s;
 }
 

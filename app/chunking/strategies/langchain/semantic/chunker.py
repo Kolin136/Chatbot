@@ -14,21 +14,24 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass
+import re
 from pathlib import Path
 from typing import Any
 
-from docling_core.types.doc.document import (
-    DoclingDocument,
-    ListItem,
-    PictureItem,
-    SectionHeaderItem,
-    TableItem,
-    TextItem,
-    TitleItem,
-)
+from docling_core.types.doc.document import DoclingDocument
 from langchain_core.embeddings import Embeddings
 from langchain_experimental.text_splitter import SemanticChunker
+
+# 통합 텍스트 조립 + doc_item 역매핑은 fixed_size 전략과 공유 (strategies/common.py).
+# 원래 이 파일의 private 함수였던 것을 승격 — 본문 수정을 피하려 원래 이름으로 alias.
+from app.chunking.strategies.common import (
+    DEFAULT_LANG as _DEFAULT_LANG,
+    DocItemSpan as _DocItemSpan,
+    build_integrated_text as _build_integrated_text,
+    collect_headings as _collect_headings,
+    collect_pages as _collect_pages,
+    items_in_range as _items_in_range,
+)
 
 from app.chunking.strategies.langchain.semantic.embeddings_adapter import (
     PydanticAIEmbeddingsAdapter,
@@ -38,27 +41,6 @@ from app.config import SEMANTIC_BREAKPOINT_AMOUNT, SEMANTIC_BREAKPOINT_TYPE
 logger = logging.getLogger(__name__)
 
 STRATEGY_NAME = "langchain_semantic"
-
-# 이미지/표 설명문을 통합 텍스트에 끼워넣을 때 사용할 도입 문구 템플릿.
-# 자연어 흐름 형태로 작성 — SemanticChunker가 의미 단위로 잘 묶도록 유도.
-_DEFAULT_LANG = "ko"
-_PICTURE_PROLOGUES = {
-    "ko": "이 문서에 그림이 하나 있다. 그 설명: {desc}",
-    "en": "There is a figure in this document. Description: {desc}",
-}
-_TABLE_PROLOGUES = {
-    "ko": "이 문서에 표가 하나 있다. 그 설명: {desc}",
-    "en": "There is a table in this document. Description: {desc}",
-}
-
-
-@dataclass
-class _DocItemSpan:
-    """통합 텍스트 안에서 한 doc_item이 차지하는 char 범위."""
-
-    item: Any  # TextItem | SectionHeaderItem | PictureItem | TableItem | ...
-    start: int  # char offset (포함)
-    end: int  # char offset (제외)
 
 
 def build_chunker(
@@ -81,147 +63,77 @@ def build_chunker(
     )
 
 
-def _build_integrated_text(
-    doc: DoclingDocument,
-    pic_descriptions: dict[str, str],
-    table_descriptions: dict[str, str],
-    lang: str = _DEFAULT_LANG,
-    skip_media: bool = False,
-) -> tuple[str, list[_DocItemSpan]]:
-    """doc.iterate_items() 순회해 통합 텍스트 + doc_item char span 생성.
+def _sentence_spans(text: str, pattern: str) -> list[tuple[int, int]]:
+    """문장 분리 결과를 (char_start, char_end) 목록으로 반환.
 
-    - SectionHeaderItem/TitleItem → "\\n\\n# {text}\\n\\n"
-    - TextItem/ListItem → "{text}\\n"
-    - PictureItem → "\\n\\n{도입문구}\\n\\n" (skip된 picture는 제외)
-    - TableItem → "\\n\\n{도입문구}\\n{markdown}\\n\\n"
-
-    skip_media=True면 PictureItem/TableItem을 통째로 제외 — 설명문도 markdown 표도
-    통합 텍스트에 넣지 않는다 (본문 텍스트만 남김).
+    SemanticChunker 내부의 `re.split(sentence_split_regex, text)` 와 동일한 경계를
+    쓰되, 잘라낸 조각 대신 원문에서의 위치를 남긴다.
+    구분자(문장 끝 뒤 공백)는 어느 문장에도 포함하지 않는다 — re.split 과 동일.
     """
-    pic_prologue = _PICTURE_PROLOGUES.get(lang, _PICTURE_PROLOGUES[_DEFAULT_LANG])
-    table_prologue = _TABLE_PROLOGUES.get(lang, _TABLE_PROLOGUES[_DEFAULT_LANG])
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    for m in re.finditer(pattern, text):
+        spans.append((pos, m.start()))
+        pos = m.end()
+    spans.append((pos, len(text)))
+    return spans
 
-    parts: list[str] = []
-    spans: list[_DocItemSpan] = []
-    cursor = 0
 
-    for item, _level in doc.iterate_items():
-        text_block = ""
+def _map_chunks_to_spans(
+    chunks: list[str], sentences: list[str], spans: list[tuple[int, int]]
+) -> list[tuple[int, int]] | None:
+    """SemanticChunker가 돌려준 청크 문자열 → 원문 char 구간으로 역매핑.
 
-        if isinstance(item, (TitleItem, SectionHeaderItem)):
-            heading = (getattr(item, "text", "") or "").strip()
-            if not heading:
-                continue
-            text_block = f"\n\n# {heading}\n\n"
-        elif isinstance(item, (TextItem, ListItem)):
-            body = (getattr(item, "text", "") or "").strip()
-            if not body:
-                continue
-            text_block = body + "\n"
-        elif isinstance(item, PictureItem):
-            if skip_media:
-                continue
-            desc = pic_descriptions.get(item.self_ref, "").strip()
-            if not desc:
-                continue  # 설명 없음(skip된 logo 등) → 통합 텍스트에 포함하지 않음
-            text_block = f"\n\n{pic_prologue.format(desc=desc)}\n\n"
-        elif isinstance(item, TableItem):
-            if skip_media:
-                continue
-            desc = table_descriptions.get(item.self_ref, "").strip()
-            md = ""
-            try:
-                df = item.export_to_dataframe(doc=doc)
-                md = df.to_markdown(index=False)
-            except Exception:
-                pass
-            if not desc and not md:
-                continue
-            if desc and md:
-                text_block = f"\n\n{table_prologue.format(desc=desc)}\n{md}\n\n"
-            elif desc:
-                text_block = f"\n\n{table_prologue.format(desc=desc)}\n\n"
-            else:
-                text_block = f"\n\n{md}\n\n"
+    청크는 연속된 문장 그룹을 `" ".join` 한 것이다(text_splitter.py:257).
+    join 과정에서 원문의 개행이 공백으로 바뀌므로 청크 문자열 자체로는
+    원문 위치를 찾을 수 없다. 대신 "몇 번째 문장부터 몇 번째까지인가"를
+    길이 누적으로 역산해 원문 구간을 얻는다.
+
+    한 청크라도 문장 경계와 어긋나면 None 을 반환한다(호출자가 폴백).
+    """
+    out: list[tuple[int, int]] = []
+    i = 0
+    for chunk in chunks:
+        if i >= len(sentences):
+            return None
+        # join 길이 = 문장 길이 합 + 사이 공백 수
+        acc = 0
+        j = i
+        while j < len(sentences):
+            acc += len(sentences[j]) + (1 if j > i else 0)
+            if acc == len(chunk):
+                break
+            if acc > len(chunk):
+                return None
+            j += 1
         else:
-            continue
-
-        start = cursor
-        end = cursor + len(text_block)
-        spans.append(_DocItemSpan(item=item, start=start, end=end))
-        parts.append(text_block)
-        cursor = end
-
-    return "".join(parts), spans
+            return None
+        if " ".join(sentences[i : j + 1]) != chunk:
+            return None
+        out.append((spans[i][0], spans[j][1]))
+        i = j + 1
+    return out
 
 
-def _items_in_range(
-    spans: list[_DocItemSpan], char_start: int, char_end: int
-) -> list[Any]:
-    """[char_start, char_end) 범위와 겹치는 doc_item 들 반환 (위치순)."""
-    result = []
-    for sp in spans:
-        if sp.end <= char_start:
-            continue
-        if sp.start >= char_end:
-            break
-        result.append(sp.item)
-    return result
-
-
-def _collect_pages(items: list[Any]) -> list[int]:
-    pages: set[int] = set()
-    for it in items:
-        prov = getattr(it, "prov", None) or []
-        for p in prov:
-            page_no = getattr(p, "page_no", None)
-            if page_no is not None:
-                pages.add(page_no)
-    return sorted(pages)
-
-
-def _collect_headings(items: list[Any], all_spans: list[_DocItemSpan], chunk_start: int) -> list[str]:
-    """청크 시작 이전에 등장한 가장 가까운 SectionHeader/Title 한 개를 헤더로 사용.
-
-    완벽한 계층 추적은 안 하고 단순화 — 청크 시작점 직전의 헤더 1개만.
-    """
-    last_header_text = ""
-    for sp in all_spans:
-        if sp.start >= chunk_start:
-            break
-        if isinstance(sp.item, (TitleItem, SectionHeaderItem)):
-            text = (getattr(sp.item, "text", "") or "").strip()
-            if text:
-                last_header_text = text
-    return [last_header_text] if last_header_text else []
 
 
 def _build_chunk_record(
     index: int,
-    lc_doc_text: str,
+    char_start: int,
+    char_end: int,
     integrated_text: str,
     spans: list[_DocItemSpan],
-    search_cursor: int,
     doc_name: str,
     picture_self_refs: set[str],
     table_self_refs: set[str],
-) -> tuple[dict[str, Any], int]:
-    """LangChain Document 1개를 chunks.jsonl 한 줄 dict로 변환.
+) -> dict[str, Any]:
+    """청크 1개(원문 char 구간)를 chunks.jsonl 한 줄 dict로 변환.
 
-    `search_cursor` 부터 통합 텍스트 안에서 lc_doc_text 시작 위치를 찾는다.
-    반환: (record dict, 다음 search_cursor)
+    텍스트는 SemanticChunker가 돌려준 문자열이 아니라 **원문에서 직접 잘라낸다**.
+    SemanticChunker는 문장을 `" ".join` 으로 재조립해 개행·문단 구분이 공백으로
+    뭉개지므로, 그대로 쓰면 훼손된 텍스트가 임베딩되고 원문 위치도 못 찾는다.
     """
-    # 통합 텍스트 안에서 청크의 char span 위치 찾기
-    pos = integrated_text.find(lc_doc_text, search_cursor)
-    if pos < 0:
-        # 만일 못 찾으면 처음부터 다시 시도
-        pos = integrated_text.find(lc_doc_text)
-    if pos < 0:
-        # 그래도 못 찾으면 search_cursor 부터로 가정
-        pos = search_cursor
-
-    char_start = pos
-    char_end = pos + len(lc_doc_text)
+    lc_doc_text = integrated_text[char_start:char_end]
 
     items = _items_in_range(spans, char_start, char_end)
     refs = [getattr(it, "self_ref", "") for it in items]
@@ -250,7 +162,7 @@ def _build_chunk_record(
         "table_refs": table_refs,
         "strategy": STRATEGY_NAME,
     }
-    return record, char_end
+    return record
 
 
 async def write_chunks_jsonl(
@@ -288,27 +200,46 @@ async def write_chunks_jsonl(
         len(spans),
     )
 
-    # SemanticChunker.create_documents 는 sync 함수 → to_thread 로 비동기화
-    documents = await asyncio.to_thread(
-        chunker.create_documents, [integrated_text]
-    )
-    logger.info("SemanticChunker 응답: 청크 %d개 생성", len(documents))
+    # SemanticChunker.split_text 는 sync 함수 → to_thread 로 비동기화
+    chunk_texts = await asyncio.to_thread(chunker.split_text, integrated_text)
+    logger.info("SemanticChunker 응답: 청크 %d개 생성", len(chunk_texts))
+
+    # 청크 문자열 → 원문 char 구간 역매핑.
+    # SemanticChunker와 동일한 정규식으로 문장을 나눠 위치를 추적한 뒤,
+    # 각 청크가 몇 번째~몇 번째 문장인지 길이로 역산한다.
+    sent_spans = _sentence_spans(integrated_text, chunker.sentence_split_regex)
+    sentences = [integrated_text[a:b] for a, b in sent_spans]
+    char_ranges = _map_chunks_to_spans(chunk_texts, sentences, sent_spans)
+
+    if char_ranges is None:
+        # 역매핑 실패 — 문장 경계가 어긋난 경우. 전체를 한 청크로 두느니
+        # 순차 근사(직전 청크 끝부터)로 진행하되 경고를 남긴다.
+        logger.warning(
+            "청크→원문 역매핑 실패 — 페이지/헤딩 귀속이 부정확할 수 있습니다 "
+            "(문장 %d개, 청크 %d개)", len(sentences), len(chunk_texts),
+        )
+        char_ranges = []
+        cursor = 0
+        for t in chunk_texts:
+            char_ranges.append((cursor, min(cursor + len(t), len(integrated_text))))
+            cursor += len(t)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
-    search_cursor = 0
     with out_path.open("w", encoding="utf-8") as fp:
-        for i, lc_doc in enumerate(documents):
-            record, search_cursor = _build_chunk_record(
-                index=i,
-                lc_doc_text=lc_doc.page_content,
+        for i, (char_start, char_end) in enumerate(char_ranges):
+            record = _build_chunk_record(
+                index=count,
+                char_start=char_start,
+                char_end=char_end,
                 integrated_text=integrated_text,
                 spans=spans,
-                search_cursor=search_cursor,
                 doc_name=doc_name,
                 picture_self_refs=picture_self_refs,
                 table_self_refs=table_self_refs,
             )
+            if not record["text"].strip():
+                continue
             fp.write(json.dumps(record, ensure_ascii=False) + "\n")
             count += 1
     logger.info("chunks.jsonl 저장 완료: %s (%d개)", out_path, count)

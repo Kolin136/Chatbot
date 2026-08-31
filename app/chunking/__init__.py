@@ -9,6 +9,7 @@
 6. 청킹 → chunks.jsonl 저장 — **strategy 분기**
    - "docling_hybrid":     HybridChunker (구조 단위 + 토큰 한도)
    - "langchain_semantic": SemanticChunker (임베딩 유사도 기반 의미 단위)
+   - "fixed_size":         고정 토큰 수 균등 분할 (구조·의미 무시, baseline)
 """
 from __future__ import annotations
 
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[int, str, str], None]
 """(progress_percent, step_key, message) — 진행 상황 알림."""
 
-ChunkStrategy = Literal["docling_hybrid", "langchain_semantic"]
+ChunkStrategy = Literal["docling_hybrid", "langchain_semantic", "fixed_size"]
 DEFAULT_STRATEGY: ChunkStrategy = "docling_hybrid"
 
 
@@ -227,6 +228,26 @@ async def process_pdf(
             pic_descriptions=pic_descriptions,
             table_descriptions=table_descriptions,
             chunker=sem_chunker,
+            out_path=chunks_path,
+            doc_name=doc_name,
+            picture_self_refs=picture_refs,
+            table_self_refs=table_refs,
+            lang=lang,
+            skip_media=skip_media,
+        )
+    elif strategy == "fixed_size":
+        # 지연 import — transformers 토크나이저 로드를 이 전략 선택 시에만 수행
+        from app.chunking.strategies.fixed_size import (
+            build_chunker as build_fixed_chunker,
+            write_chunks_jsonl as write_fixed_chunks_jsonl,
+        )
+
+        fixed_chunker = build_fixed_chunker(tokenizer_model=embed_model)
+        chunk_count = write_fixed_chunks_jsonl(
+            doc=doc,
+            pic_descriptions=pic_descriptions,
+            table_descriptions=table_descriptions,
+            chunker=fixed_chunker,
             out_path=chunks_path,
             doc_name=doc_name,
             picture_self_refs=picture_refs,

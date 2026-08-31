@@ -876,9 +876,12 @@
 .strategy-options {
   display: flex;
   gap: 10px;
+  /* 전략이 3개가 되면서 좁은 폭에서 한 줄에 다 안 들어감 — 줄바꿈 허용.
+     이 클래스는 문서 언어 라디오(2개)와 공유하므로 거기선 기존과 동일하게 보인다. */
+  flex-wrap: wrap;
 }
 .strategy-option {
-  flex: 1;
+  flex: 1 1 220px;
   display: flex;
   align-items: flex-start;
   gap: 10px;

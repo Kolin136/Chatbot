@@ -211,7 +211,7 @@ async def upload_pdf(
     filename = _fix_multipart_filename(file.filename)
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다.")
-    if strategy not in ("docling_hybrid", "langchain_semantic"):
+    if strategy not in ("docling_hybrid", "langchain_semantic", "fixed_size"):
         raise HTTPException(
             status_code=400,
             detail=f"지원하지 않는 strategy: {strategy}",

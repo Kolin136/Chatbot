@@ -36,7 +36,7 @@ from cachetools import LRUCache
 from rank_bm25 import BM25Okapi
 
 from app.config import chroma_client, embedder
-from app.rag import RetrievedChunk
+from app.rag import RetrievedChunk, dedupe_by_parent
 
 if TYPE_CHECKING:
     from kiwipiepy import Kiwi
@@ -208,10 +208,15 @@ async def get_or_build_bm25_index(
         metadatas = full.get("metadatas") or []
         documents = full.get("documents") or []
 
-        # 텍스트 추출 — raw_text 우선, documents 폴백 (ADR-013 / rag.py:74)
+        # 텍스트 추출 — child_text 우선, raw_text, documents 순 폴백.
+        # child_text 를 먼저 보는 이유: Parent-Child 색인에서 자식마다 raw_text 에
+        # 부모 원문이 복제돼 있어, raw_text 로 색인하면 같은 문서가 자식 수만큼
+        # 중복 등록되어 IDF·평균 문서 길이가 왜곡되고 부모 하나가 sparse 상위를 점거한다.
+        # child_text 가 없는 기존 컬렉션은 raw_text 로 폴백된다.
         texts: list[str] = []
         for meta, doc in zip(metadatas, documents):
-            text = (meta or {}).get("raw_text") or doc or ""
+            m = meta or {}
+            text = m.get("child_text") or m.get("raw_text") or doc or ""
             texts.append(text)
 
         # 모든 텍스트가 비면 인덱스 빌드 의미 없음
@@ -416,6 +421,7 @@ def _build_retrieved_chunks(
     metas_list = fetch_res.get("metadatas") or []
     docs_list = fetch_res.get("documents") or []
     out: list[RetrievedChunk] = []
+    parents: list[str] = []
     for chunk_id, meta, doc in zip(ids_list, metas_list, docs_list):
         meta = meta or {}
         text = (meta.get("raw_text") or doc or "").strip()
@@ -436,4 +442,5 @@ def _build_retrieved_chunks(
                 score=round(fused.get(chunk_id, 0.0), 6),
             )
         )
-    return out
+        parents.append(meta.get("parent_chunk_id") or meta.get("chunk_id") or chunk_id)
+    return dedupe_by_parent(out, parents)

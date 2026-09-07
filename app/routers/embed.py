@@ -27,6 +27,7 @@ from pydantic_ai import Agent
 
 from app.config import chat_model, chroma_client, embedder
 from app.embed_jobs import embed_job_store
+from app.embeddings.child_split import split_for_embedding
 from app.models import (
     EmbedRequest,
     EmbedStartResponse,
@@ -238,13 +239,50 @@ async def _run_embed_job(
                 embed_inputs = raw_texts
                 documents = raw_texts  # ChromaDB documents = 원본
 
-            # 임베딩
+            # Parent-Child: 임베딩 모델 한도를 넘는 청크는 자식 조각으로 펼친다.
+            # 자식은 벡터를 만들기 위한 것일 뿐 — 검색에 걸리면 LLM에는
+            # metadata.raw_text 의 부모 전체가 전달된다.
+            ids: list[str] = []
+            child_docs: list[str] = []
+            metadatas: list[dict] = []
+            n_split_parents = 0
+            for idx_in_batch, (c, raw) in enumerate(zip(batch, raw_texts)):
+                parent_id = c["chunk_id"]
+                children = split_for_embedding(documents[idx_in_batch]) or [
+                    documents[idx_in_batch]
+                ]
+                if len(children) > 1:
+                    n_split_parents += 1
+                for j, child in enumerate(children):
+                    # 분할이 없으면 부모 id 를 그대로 써 기존 컬렉션과 형태를 맞춘다.
+                    ids.append(parent_id if len(children) == 1 else f"{parent_id}/{j}")
+                    child_docs.append(child)
+                    meta = _build_metadata(c)
+                    # chunk_id 는 부모 id 유지 — rag.py/retrieval.py 가 meta 를 우선하므로
+                    # 응답 sources 가 자동으로 부모를 가리킨다.
+                    meta["raw_text"] = raw          # 부모 전체 (LLM 컨텍스트)
+                    meta["child_text"] = child      # 자식 조각 (BM25 코퍼스)
+                    meta["parent_chunk_id"] = parent_id
+                    if summarize:
+                        meta["summary"] = summaries[idx_in_batch]
+                    metadatas.append(meta)
+
+            if n_split_parents:
+                logger.info(
+                    "[batch %d/%d] 자식 분할: 부모 %d개 → 레코드 %d개 (분할된 부모 %d개)",
+                    batch_idx, total_batches, len(batch), len(ids), n_split_parents,
+                )
+
+            # 임베딩 — 자식으로 펼치면 배치 크기를 넘길 수 있으므로 다시 쪼개 호출
             logger.info(
                 "[batch %d/%d] LM Studio 임베딩 호출 (%d개)",
-                batch_idx, total_batches, len(embed_inputs),
+                batch_idx, total_batches, len(child_docs),
             )
-            embed_result = await embedder.embed_documents(embed_inputs)
-            embeddings = list(embed_result.embeddings)
+            embeddings: list = []
+            for sub_start in range(0, len(child_docs), EMBED_BATCH_SIZE):
+                sub = child_docs[sub_start : sub_start + EMBED_BATCH_SIZE]
+                sub_result = await embedder.embed_documents(sub)
+                embeddings.extend(list(sub_result.embeddings))
             logger.info(
                 "[batch %d/%d] 임베딩 응답 수신 (%d 벡터, dim=%d)",
                 batch_idx, total_batches,
@@ -252,21 +290,11 @@ async def _run_embed_job(
                 len(embeddings[0]) if embeddings else 0,
             )
 
-            # ChromaDB add
-            ids = [c["chunk_id"] for c in batch]
-            metadatas: list[dict] = []
-            for idx_in_batch, (c, raw) in enumerate(zip(batch, raw_texts)):
-                meta = _build_metadata(c)
-                meta["raw_text"] = raw  # 어느 모드든 원본 보관 (rag.py가 우선 사용)
-                if summarize:
-                    meta["summary"] = summaries[idx_in_batch]
-                metadatas.append(meta)
-
             await asyncio.to_thread(
                 collection.add,
                 ids=ids,
                 embeddings=embeddings,
-                documents=documents,
+                documents=child_docs,
                 metadatas=metadatas,
             )
             processed += len(batch)

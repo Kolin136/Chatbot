@@ -36,6 +36,8 @@ from app.chunking.strategies.common import (
 from app.chunking.strategies.langchain.semantic.embeddings_adapter import (
     PydanticAIEmbeddingsAdapter,
 )
+# 문장 경계는 임베딩 시점 자식 분할(app/embeddings/child_split.py)과 공유해야 한다.
+from app.text_utils import sentence_spans as _sentence_spans
 from app.config import SEMANTIC_BREAKPOINT_AMOUNT, SEMANTIC_BREAKPOINT_TYPE
 
 logger = logging.getLogger(__name__)
@@ -61,22 +63,6 @@ def build_chunker(
         breakpoint_threshold_type=bp_type,
         breakpoint_threshold_amount=bp_amount,
     )
-
-
-def _sentence_spans(text: str, pattern: str) -> list[tuple[int, int]]:
-    """문장 분리 결과를 (char_start, char_end) 목록으로 반환.
-
-    SemanticChunker 내부의 `re.split(sentence_split_regex, text)` 와 동일한 경계를
-    쓰되, 잘라낸 조각 대신 원문에서의 위치를 남긴다.
-    구분자(문장 끝 뒤 공백)는 어느 문장에도 포함하지 않는다 — re.split 과 동일.
-    """
-    spans: list[tuple[int, int]] = []
-    pos = 0
-    for m in re.finditer(pattern, text):
-        spans.append((pos, m.start()))
-        pos = m.end()
-    spans.append((pos, len(text)))
-    return spans
 
 
 def _map_chunks_to_spans(

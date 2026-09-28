@@ -1,15 +1,55 @@
 // 청크 결과 보기 모달 — JSON을 예쁘게 표시
 
-function ChunkViewer({ chunks }) {
+function ChunkViewer({ chunks, onSave, onEditingChange }) {
   const [expandedId, setExpandedId] = useState(chunks[0]?.chunk_id || null);
   const [query, setQuery] = useState("");
+  // 편집은 한 번에 하나만 (expandedId와 동일한 단일 값 방식)
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+
+  // 편집 중 여부를 부모에 알림 → 모달 실수 닫힘 방지
+  useEffect(() => {
+    if (onEditingChange) onEditingChange(editingId !== null);
+  }, [editingId, onEditingChange]);
+
+  const startEdit = (c) => {
+    setEditingId(c.chunk_id);
+    setDraft(c.contextualized_text || "");
+    setSaveError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft("");
+    setSaveError(null);
+  };
+
+  const commitEdit = async (chunkId) => {
+    if (!draft.trim()) {
+      setSaveError("내용이 비어있습니다. 빈 청크는 임베딩할 수 없어요.");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(chunkId, draft);
+      setEditingId(null);
+      setDraft("");
+    } catch (e) {
+      setSaveError(e.message || "저장에 실패했어요.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     if (!query.trim()) return chunks;
     const q = query.toLowerCase();
     return chunks.filter(
       (c) =>
-        c.contextualized_text.toLowerCase().includes(q) ||
+        (c.contextualized_text || "").toLowerCase().includes(q) ||
         (c.headings || []).some((h) => h.toLowerCase().includes(q))
     );
   }, [chunks, query]);
@@ -45,7 +85,7 @@ function ChunkViewer({ chunks }) {
                 <div className="chunk-card-title-wrap">
                   <div className="chunk-card-title">{heading}</div>
                   <div className="chunk-card-preview">
-                    {c.contextualized_text.slice(0, 110)}…
+                    {(c.contextualized_text || "").slice(0, 110)}…
                   </div>
                 </div>
                 <div className="chunk-card-meta">
@@ -59,12 +99,65 @@ function ChunkViewer({ chunks }) {
               {expanded && (
                 <div className="chunk-card-body anim-in">
                   <div className="chunk-section">
-                    <div className="chunk-section-label">컨텍스트화된 텍스트</div>
-                    <div className="chunk-text">
-                      {c.contextualized_text.split("\n").map((line, i) => (
-                        <p key={i}>{line}</p>
-                      ))}
+                    <div className="chunk-section-head">
+                      <div className="chunk-section-label">컨텍스트화된 텍스트</div>
+                      {onSave && editingId !== c.chunk_id && (
+                        <button
+                          type="button"
+                          className="chunk-edit-btn"
+                          onClick={() => startEdit(c)}
+                        >
+                          <Icon.Pencil w={13} h={13} />
+                          수정
+                        </button>
+                      )}
                     </div>
+
+                    {editingId === c.chunk_id ? (
+                      <div className="chunk-edit-wrap">
+                        <textarea
+                          className="chunk-edit-area"
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          disabled={saving}
+                          autoFocus
+                          spellCheck={false}
+                        />
+                        <div className="chunk-edit-hint">
+                          이 텍스트가 그대로 임베딩되고 답변 근거로 쓰입니다. 저장하면 chunks.jsonl에 반영돼요.
+                        </div>
+                        {saveError && (
+                          <div className="chunk-edit-error">
+                            <Icon.AlertCircle w={14} h={14} />
+                            <span>{saveError}</span>
+                          </div>
+                        )}
+                        <div className="chunk-edit-actions">
+                          <button
+                            type="button"
+                            className="chunk-edit-cancel"
+                            onClick={cancelEdit}
+                            disabled={saving}
+                          >
+                            취소
+                          </button>
+                          <button
+                            type="button"
+                            className="chunk-edit-save"
+                            onClick={() => commitEdit(c.chunk_id)}
+                            disabled={saving || !draft.trim()}
+                          >
+                            {saving ? "저장 중…" : "저장"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="chunk-text">
+                        {(c.contextualized_text || "").split("\n").map((line, i) => (
+                          <p key={i}>{line}</p>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="chunk-meta-grid">

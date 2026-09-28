@@ -589,6 +589,101 @@
 }
 .chunk-text p + p { margin-top: 6px; }
 
+/* ---- 청크 편집 (컨텍스트화된 텍스트 수정) ---- */
+.chunk-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.chunk-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.chunk-edit-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-surface-2);
+}
+
+/* 편집 전후 시각적 점프가 없도록 .chunk-text와 동일한 타이포/배경 유지 */
+.chunk-edit-area {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 200px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--text-primary);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--accent);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  outline: none;
+}
+.chunk-edit-area:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.chunk-edit-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+.chunk-edit-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--danger, #e5484d);
+  background: color-mix(in srgb, var(--danger, #e5484d) 10%, transparent);
+  border-radius: var(--radius-sm, 6px);
+}
+.chunk-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+.chunk-edit-cancel,
+.chunk-edit-save {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+}
+.chunk-edit-cancel {
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+.chunk-edit-cancel:hover:not(:disabled) { color: var(--text-primary); }
+.chunk-edit-save {
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+.chunk-edit-save:hover:not(:disabled) { opacity: 0.88; }
+.chunk-edit-cancel:disabled,
+.chunk-edit-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .chunk-meta-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -781,9 +876,12 @@
 .strategy-options {
   display: flex;
   gap: 10px;
+  /* 전략이 3개가 되면서 좁은 폭에서 한 줄에 다 안 들어감 — 줄바꿈 허용.
+     이 클래스는 문서 언어 라디오(2개)와 공유하므로 거기선 기존과 동일하게 보인다. */
+  flex-wrap: wrap;
 }
 .strategy-option {
-  flex: 1;
+  flex: 1 1 220px;
   display: flex;
   align-items: flex-start;
   gap: 10px;

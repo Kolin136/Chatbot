@@ -100,8 +100,11 @@ CHROMA_HOST=localhost
 CHROMA_PORT=8001
 
 # ─── 청킹 ──────────────────────────────────────────────────────
-# 임베딩 모델의 max_context_length(512) 와 정렬
-CHUNK_TOKENIZER_MODEL=sentence-transformers/all-MiniLM-L6-v2
+# 임베딩 모델의 max_context_length(512) 와 정렬.
+# 토크나이저는 반드시 EMBEDDING_MODEL과 동일 계열이어야 한다 —
+# 다르면 토큰 수 계산이 어긋나 한도를 다 못 쓰거나(과다 계산) 초과해 잘린다(과소 계산).
+# all-MiniLM-L6-v2(영어용)는 한국어를 실제보다 2~2.6배 부풀려 세서 e5로 교체했다.
+CHUNK_TOKENIZER_MODEL=intfloat/multilingual-e5-large-instruct
 CHUNK_MAX_TOKENS=512
 
 # Skip할 picture 분류 라벨 (DocumentFigureClassifier-v2.5 라벨, 쉼표 구분)
@@ -115,7 +118,7 @@ SKIP_PICTURE_CLASSES=logo
 CHUNK_VLM_INTERVAL_SEC=0
 EMBED_SUMMARY_INTERVAL_SEC=0
 
-# 청킹 전략 (docling_hybrid | langchain_semantic) — 프론트가 매번 지정하면 무시됨
+# 청킹 전략 (docling_hybrid | langchain_semantic | fixed_size) — 프론트가 매번 지정하면 무시됨
 CHUNK_STRATEGY=docling_hybrid
 # LangChain SemanticChunker 옵션
 # breakpoint_threshold_type: percentile | standard_deviation | interquartile
@@ -124,6 +127,23 @@ SEMANTIC_BREAKPOINT_TYPE=percentile
 SEMANTIC_BREAKPOINT_AMOUNT=95
 # SemanticChunker가 한 번에 임베딩 보낼 문장 수. LM Studio는 한도 없지만 메모리 안정성 차원에서 유지.
 SEMANTIC_EMBED_BATCH_SIZE=32
+
+# 고정 크기 청킹(fixed_size) 목표 토큰 수. 토크나이저는 CHUNK_TOKENIZER_MODEL 공용.
+# 256인 이유: docling_hybrid 실측 평균이 225토큰이라 크기를 맞춰야 "청킹 방식" 차이만 비교된다.
+# 512는 "넘으면 잘린다"는 상한이지 목표가 아니다 — 꽉 채우면 한 청크에 여러 주제가
+# 섞여 벡터가 평균화되고 어느 질문에도 어정쩡하게 매칭된다.
+FIXED_CHUNK_SIZE=256
+
+# ─── Parent-Child 색인 (큰 청크를 자식 벡터로 분할) ─────────────
+# 시멘틱 청킹은 크기 상한이 없어 임베딩 모델 한도를 넘는 청크가 나온다.
+# 넘긴 만큼은 조용히 잘려 검색에 존재하지 않게 되므로, 초과 청크만 자식으로 쪼개
+# 각각 벡터를 만든다. 검색에 걸리면 LLM에는 부모 청크 전체가 전달된다.
+# 청킹이 아니라 임베딩 시점에 동작하므로 전략과 무관하게 적용된다
+# (docling_hybrid·fixed_size는 이미 한도 이하라 no-op).
+EMBED_MAX_TOKENS=512
+# 자식 목표 토큰 수. 256마다 끊는 게 아니라 ceil(전체/이 값)개로 균등 분할할 때의
+# 기준이다(짜투리 조각 방지). 경계는 목표 지점에서 가장 가까운 문장 끝.
+EMBED_CHILD_TARGET_TOKENS=256
 
 # ─── 하이브리드 검색 (Dense + BM25 + RRF) ──────────────────────
 # Dense/Sparse 후보 수는 컬렉션 청크 수의 비율로 결정 (clamp 적용).
@@ -213,6 +233,6 @@ docker compose down            # 종료 (-v 추가 시 데이터 삭제)
 
 ## 알려진 함정
 
-- **임베딩 모델 max_context=512 토큰** — 청크가 길면 LM Studio가 자동으로 잘라 임베딩한다. (답변은 `metadata.raw_text` 우선 사용이라 영향 적음)
-- **청크 토큰 한도(`CHUNK_MAX_TOKENS=512`)** — HybridChunker가 이를 넘는 청크를 분할한다. 한국어는 영어 토크나이저(MiniLM)에서 토큰을 많이 써서, 긴 한국어 설명이 여러 청크로 쪼개질 수 있다.
+- **임베딩 모델 max_context=512 토큰** — 초과분은 LM Studio가 조용히 잘라낸다. HTTP 200에 정상 벡터를 반환하므로 호출한 쪽에서는 알 수 없다. 이 손실을 막으려고 Parent-Child 색인(`EMBED_MAX_TOKENS` / `EMBED_CHILD_TARGET_TOKENS`)을 둔다 — 초과 청크를 자식으로 쪼개 전부 임베딩하고, 검색되면 부모 전체를 LLM에 전달한다.
+- **토크나이저는 임베딩 모델과 같은 계열이어야 한다** — 다르면 토큰 수 계산이 어긋난다. 영어용 MiniLM은 한국어를 2~2.6배 부풀려 세서, `CHUNK_MAX_TOKENS=512`인데 실제로는 200토큰 남짓만 쓰고 있었다. `CHUNK_TOKENIZER_MODEL`을 e5로 맞춘 이유.
 - **LM Studio rerank API 없음** — reranker는 별도 처리 필요.

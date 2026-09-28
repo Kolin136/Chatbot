@@ -9,6 +9,7 @@ function ChunkingPage({ onGoChat }) {
   const [doOcr, setDoOcr] = useState(false);
   const [strategy, setStrategy] = useState("docling_hybrid");
   const [lang, setLang] = useState("ko");  // 문서 언어 — 이미지/표 VLM 설명 언어 결정
+  const [skipMedia, setSkipMedia] = useState(false);  // 기본 OFF — 이미지/표를 청크에 포함
 
   // 청킹 진행
   const [jobId, setJobId] = useState(null);
@@ -23,6 +24,7 @@ function ChunkingPage({ onGoChat }) {
   const [chunkModal, setChunkModal] = useState(false);
   const [chunks, setChunks] = useState(null);
   const [chunksLoading, setChunksLoading] = useState(false);
+  const [chunkEditing, setChunkEditing] = useState(false);  // 편집 중이면 모달 실수 닫힘 방지
 
   // 임베딩
   const [collectionName, setCollectionName] = useState("");
@@ -43,7 +45,7 @@ function ChunkingPage({ onGoChat }) {
     setChunkProgress(0);
     setChunkMessage("업로드 중…");
     try {
-      const up = await window.api.uploadPdf(file, doOcr, strategy, lang);
+      const up = await window.api.uploadPdf(file, doOcr, strategy, lang, skipMedia);
       setJobId(up.job_id);
       setDocName(up.doc_name);
     } catch (e) {
@@ -100,6 +102,24 @@ function ChunkingPage({ onGoChat }) {
     } finally {
       setChunksLoading(false);
     }
+  };
+
+  // 청크 수정 저장 — 서버 반영 후 로컬 state 갱신 (모달을 닫았다 열어도 유지)
+  const handleChunkSave = async (chunkId, contextualizedText) => {
+    const updated = await window.api.updateChunk(docName, chunkId, contextualizedText);
+    const nextText = (updated && updated.contextualized_text) || contextualizedText;
+    setChunks((prev) =>
+      (prev || []).map((c) =>
+        c.chunk_id === chunkId ? { ...c, contextualized_text: nextText } : c
+      )
+    );
+  };
+
+  // 편집 중이면 확인 후 닫기 — backdrop 클릭 실수로 입력이 날아가지 않게
+  const closeChunkModal = () => {
+    if (chunkEditing && !window.confirm("수정 중인 내용이 있어요. 저장하지 않고 닫을까요?")) return;
+    setChunkEditing(false);
+    setChunkModal(false);
   };
 
   // ============== 임베딩 시작 ==============
@@ -208,6 +228,8 @@ function ChunkingPage({ onGoChat }) {
               setStrategy={setStrategy}
               lang={lang}
               setLang={setLang}
+              skipMedia={skipMedia}
+              setSkipMedia={setSkipMedia}
               error={chunkError}
               onStart={startChunking}
               onGoEmbedSelect={() => setPhase("embed_select")}
@@ -271,17 +293,21 @@ function ChunkingPage({ onGoChat }) {
 
       <Modal
         open={chunkModal}
-        onClose={() => setChunkModal(false)}
+        onClose={closeChunkModal}
         title={`청크 결과 미리보기 · ${docName || ""}`}
         width={980}
         footer={
-          <Button variant="ghost" onClick={() => setChunkModal(false)}>닫기</Button>
+          <Button variant="ghost" onClick={closeChunkModal}>닫기</Button>
         }
       >
         {chunksLoading ? (
           <div className="chunk-loading">청크 불러오는 중…</div>
         ) : chunks ? (
-          <ChunkViewer chunks={chunks} />
+          <ChunkViewer
+            chunks={chunks}
+            onSave={docName ? handleChunkSave : null}
+            onEditingChange={setChunkEditing}
+          />
         ) : null}
       </Modal>
     </div>
@@ -291,7 +317,7 @@ function ChunkingPage({ onGoChat }) {
 // ============================================================
 // Phase: 업로드
 // ============================================================
-function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, lang, setLang, error, onStart, onGoEmbedSelect }) {
+function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, lang, setLang, skipMedia, setSkipMedia, error, onStart, onGoEmbedSelect }) {
   const [recommending, setRecommending] = useState(false);
   const [recommendation, setRecommendation] = useState(null); // { strategy, reason } | null
   const [recommendError, setRecommendError] = useState(null);
@@ -418,6 +444,19 @@ function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, la
                 <div className="strategy-option-sub">임베딩 유사도 기반 의미 단위. 느리지만 의미 흐름 우선.</div>
               </div>
             </label>
+            <label className={"strategy-option" + (strategy === "fixed_size" ? " active" : "")}>
+              <input
+                type="radio"
+                name="strategy"
+                value="fixed_size"
+                checked={strategy === "fixed_size"}
+                onChange={(e) => setStrategy(e.target.value)}
+              />
+              <div className="strategy-option-text">
+                <div className="strategy-option-name">고정 크기</div>
+                <div className="strategy-option-sub">구조·의미를 보지 않고 일정 토큰 수로 균등 분할. 가장 빠르며, 다른 전략의 효과를 재는 기준선.</div>
+              </div>
+            </label>
           </div>
         </div>
 
@@ -465,6 +504,13 @@ function UploadPhase({ file, setFile, doOcr, setDoOcr, strategy, setStrategy, la
           onChange={setDoOcr}
           title="OCR 사용"
           description="스캔된 이미지·그림 안의 글자도 인식해서 텍스트로 변환합니다. 일반 텍스트 PDF만 있다면 꺼두면 더 빨라요."
+        />
+
+        <ToggleField
+          on={skipMedia}
+          onChange={setSkipMedia}
+          title="이미지·표 제외"
+          description="그림과 표를 청크에서 완전히 빼고 본문 텍스트만 사용합니다. AI 설명 생성을 건너뛰어 청킹이 훨씬 빨라져요. 이미지·표가 검색 품질에 얼마나 기여하는지 비교하는 실험용입니다."
         />
 
         {error && (
@@ -594,6 +640,7 @@ function formatCreatedAt(iso) {
 function labelForStrategy(s) {
   if (s === "docling_hybrid") return "Docling Hybrid";
   if (s === "langchain_semantic") return "LangChain Semantic";
+  if (s === "fixed_size") return "고정 크기";
   return s;
 }
 

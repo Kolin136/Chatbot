@@ -32,6 +32,36 @@ class RetrievedChunk:
         )
 
 
+def dedupe_by_parent(
+    chunks: list[RetrievedChunk], parents: list[str]
+) -> list[RetrievedChunk]:
+    """같은 부모에서 나온 자식들을 하나로 합친다 (Parent-Child 검색).
+
+    큰 청크는 임베딩 시점에 자식 조각으로 나뉘어 색인된다(app/embeddings/child_split.py).
+    자식 여러 개가 동시에 검색되면 `RetrievedChunk.text` 가 전부 같은 부모 원문이라
+    LLM 프롬프트에 동일한 글이 중복 삽입된다.
+
+    - 그룹 키: metadata.parent_chunk_id (없으면 chunk_id — 기존 컬렉션 호환)
+    - 그룹 점수: 최댓값. 합산하면 자식이 많은 청크가 무조건 유리해진다
+    - 점수 내림차순 정렬 — ChromaDB get(ids=...) 는 요청 순서를 보장하지 않으므로
+      여기서 명시적으로 재정렬한다
+
+    NOTE: 중복이 제거된 만큼 결과 개수가 n_results 보다 줄어들 수 있다.
+    후보를 더 뽑아 채우는 것은 의도적으로 범위에서 제외했다.
+    """
+    best: dict[str, RetrievedChunk] = {}
+    for chunk, parent in zip(chunks, parents):
+        prev = best.get(parent)
+        if prev is None or chunk.score > prev.score:
+            best[parent] = chunk
+    out = sorted(best.values(), key=lambda c: -c.score)
+    if len(out) < len(chunks):
+        logger.info(
+            "부모 중복 제거: %d개 → %d개", len(chunks), len(out)
+        )
+    return out
+
+
 async def search_relevant_context(
     query: str,
     collection_name: str,
@@ -75,6 +105,7 @@ async def search_relevant_context(
         return []
 
     out: list[RetrievedChunk] = []
+    parents: list[str] = []
     ids_list = (results.get("ids") or [[]])[0]
     docs_list = (results.get("documents") or [[]])[0]
     metas_list = (results.get("metadatas") or [[]])[0]
@@ -104,7 +135,8 @@ async def search_relevant_context(
                 score=_distance_to_score(dist),
             )
         )
-    return out
+        parents.append(meta.get("parent_chunk_id") or meta.get("chunk_id") or chunk_id)
+    return dedupe_by_parent(out, parents)
 
 
 def _distance_to_score(distance: float | None) -> float:

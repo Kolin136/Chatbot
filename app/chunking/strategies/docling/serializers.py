@@ -37,10 +37,16 @@ _TABLE_LABELS = {"ko": "표 설명", "en": "Table description"}
 class ExternalAnnotationPictureSerializer(MarkdownPictureSerializer):
     """외부에서 만들어둔 picture description을 청크 텍스트에 박음."""
 
-    def __init__(self, descriptions: dict[str, str], lang: str = DEFAULT_LANG) -> None:
+    def __init__(
+        self,
+        descriptions: dict[str, str],
+        lang: str = DEFAULT_LANG,
+        skip_media: bool = False,
+    ) -> None:
         super().__init__()
         self._descriptions = descriptions
         self._label = _PICTURE_LABELS.get(lang, _PICTURE_LABELS[DEFAULT_LANG])
+        self._skip_media = skip_media
 
     @override
     def serialize(
@@ -51,6 +57,9 @@ class ExternalAnnotationPictureSerializer(MarkdownPictureSerializer):
         doc: DoclingDocument,
         **kwargs: Any,
     ) -> SerializationResult:
+        if self._skip_media:
+            # 그림을 청크 텍스트에서 완전히 제외 — 플레이스홀더도 남기지 않음.
+            return create_ser_result(text="", span_source=item)
         desc = self._descriptions.get(item.self_ref, "")
         if desc:
             text = f"{self._label}: {desc}"
@@ -67,10 +76,16 @@ class ExternalAnnotationTableSerializer(MarkdownTableSerializer):
     그 앞에 자연어 설명문을 prepend.
     """
 
-    def __init__(self, descriptions: dict[str, str], lang: str = DEFAULT_LANG) -> None:
+    def __init__(
+        self,
+        descriptions: dict[str, str],
+        lang: str = DEFAULT_LANG,
+        skip_media: bool = False,
+    ) -> None:
         super().__init__()
         self._descriptions = descriptions
         self._label = _TABLE_LABELS.get(lang, _TABLE_LABELS[DEFAULT_LANG])
+        self._skip_media = skip_media
 
     @override
     def serialize(
@@ -81,6 +96,9 @@ class ExternalAnnotationTableSerializer(MarkdownTableSerializer):
         doc: DoclingDocument,
         **kwargs: Any,
     ) -> SerializationResult:
+        if self._skip_media:
+            # 표를 청크 텍스트에서 완전히 제외 — markdown 표도 남기지 않음.
+            return create_ser_result(text="", span_source=item)
         md_result = super().serialize(
             item=item, doc_serializer=doc_serializer, doc=doc, **kwargs
         )
@@ -101,18 +119,20 @@ class AnnotationSerializerProvider(ChunkingSerializerProvider):
         pic_descriptions: dict[str, str],
         table_descriptions: dict[str, str],
         lang: str = DEFAULT_LANG,
+        skip_media: bool = False,
     ) -> None:
         self._pic_descriptions = pic_descriptions
         self._table_descriptions = table_descriptions
         self._lang = lang
+        self._skip_media = skip_media
 
     def get_serializer(self, doc: DoclingDocument) -> ChunkingDocSerializer:
         return ChunkingDocSerializer(
             doc=doc,
             picture_serializer=ExternalAnnotationPictureSerializer(
-                self._pic_descriptions, self._lang
+                self._pic_descriptions, self._lang, self._skip_media
             ),
             table_serializer=ExternalAnnotationTableSerializer(
-                self._table_descriptions, self._lang
+                self._table_descriptions, self._lang, self._skip_media
             ),
         )

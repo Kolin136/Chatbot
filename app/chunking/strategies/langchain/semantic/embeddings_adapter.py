@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Gemini BatchEmbedContents 한도는 100. 안전 마진 + embed.py 컨벤션 정렬.
+# 임베딩 배치 크기. LM Studio는 자체 한도가 없지만 메모리 안정성 차원에서 유지.
 # 분당 토큰/요청 한도(TPM/RPM)도 고려해 너무 크지 않게 잡음.
 EMBED_BATCH_SIZE = int(os.environ.get("SEMANTIC_EMBED_BATCH_SIZE", "32"))
 
@@ -101,7 +101,7 @@ class PydanticAIEmbeddingsAdapter(Embeddings):
 
     # ─── async 인터페이스 ────────────────────────────────────────────
     async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
-        # Gemini BatchEmbedContents 한도(100) 회피 — EMBED_BATCH_SIZE 단위로 분할 호출.
+        # EMBED_BATCH_SIZE 단위로 분할 호출 (대량 문장 한 번에 보내지 않도록).
         out: list[list[float]] = []
         total = len(texts)
         if total == 0:

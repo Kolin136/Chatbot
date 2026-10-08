@@ -186,7 +186,7 @@ function RagasEvalSetManager({ savedSets, onChanged }) {
     <div className="card ragas-card">
       <div className="ragas-section-title">1. 평가셋 만들기</div>
       <Help>
-        PDF를 올리면 <b>Gemini가 질문+모범답안을 자동 생성</b>해요. 검수(편집·삭제) 후 이름을 붙여 저장하면,
+        PDF를 올리면 <b>로컬 AI가 질문+모범답안을 자동 생성</b>해요. 검수(편집·삭제) 후 이름을 붙여 저장하면,
         아래 '채점 실행'에서 골라 재사용합니다. ⚠️ <b>모든 조합에 같은 평가셋</b>을 써야 비교가 공정해요(한 번 만들고 계속 재사용).
       </Help>
 
@@ -202,11 +202,11 @@ function RagasEvalSetManager({ savedSets, onChanged }) {
           </label>
           <Button variant="primary" disabled={!file || loading} onClick={generate}
             iconLeft={<Icon.Sparkles w={16} h={16} />}>
-            {loading ? "생성 중…" : "Gemini로 생성"}
+            {loading ? "생성 중…" : "평가셋 생성"}
           </Button>
         </div>
       </div>
-      <Help>※ 한국어 PDF는 일부 항목이 어색할 수 있어요. 생성 후 꼭 훑어보고 이상한 건 지우세요. (생성엔 GOOGLE_API_KEY 필요)</Help>
+      <Help>※ 로컬 모델이라 일부 항목이 어색할 수 있어요. 생성 후 꼭 훑어보고 이상한 건 지우세요.</Help>
 
       {err && <div className="ragas-error"><Icon.AlertCircle w={16} h={16} /> {err}</div>}
 

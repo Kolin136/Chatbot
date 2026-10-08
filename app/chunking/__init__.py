@@ -2,7 +2,7 @@
 
 흐름:
 1. PDF → DoclingDocument (텍스트/표 구조/이미지 추출, OCR 옵션) — 공통
-2. 이미지/표 → Pydantic AI(Gemini)로 자연어 설명문 생성 — 공통
+2. 이미지/표 → Pydantic AI(로컬 VLM)로 자연어 설명문 생성 — 공통
 3. 원본 이미지 PNG + 표 md/html/csv 별도 저장 — 공통
 4. mapping.json 저장 (청크 ↔ 원본 매핑) — 공통
 5. 전체 markdown 통문서 저장 (검증용) — 공통
@@ -127,7 +127,7 @@ async def process_pdf(
     logger.info("변환 완료: 이미지 %d개, 표 %d개", n_pics, n_tbls)
     cb(5, "converted", f"이미지 {n_pics}개, 표 {n_tbls}개 인식")
 
-    # 2. picture classification 확인 → skip 대상 분리 후 나머지에만 Gemini 호출
+    # 2. picture classification 확인 → skip 대상 분리 후 나머지에만 VLM 호출
     skip_classes = _default_skip_classes()
     # skip_media면 VLM을 아예 쓰지 않으므로 Annotator를 만들지 않는다.
     annotator = None if skip_media else Annotator(model=vlm_model, lang=lang)

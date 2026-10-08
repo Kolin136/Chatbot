@@ -149,7 +149,7 @@ class EvaluationResultsResponse(BaseModel):
 
 
 class GeneratedEvalSet(BaseModel):
-    """Gemini가 PDF로 생성한 평가셋(아직 미저장 — 검수 대상)."""
+    """로컬 VLM이 PDF로 생성한 평가셋(아직 미저장 — 검수 대상)."""
 
     items: list[dict[str, Any]]  # [{question, ground_truth}]
 

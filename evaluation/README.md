@@ -3,7 +3,7 @@
 청킹·저장·검색 **전략 조합**의 RAG 품질을 RAGAS로 채점·비교해, 정량 근거(이력서용 수치)를 만든다.
 설계 배경/결정은 [`docs/RAGAS_PLAN.md`](../docs/RAGAS_PLAN.md) 참조.
 
-> 프로덕션 모니터링이 아니라 **오프라인 실험**. 채점은 **로컬 LM Studio**(PIPA), 평가셋 생성만 Gemini(1회).
+> 프로덕션 모니터링이 아니라 **오프라인 실험**. 채점·평가셋 생성 모두 **로컬 LM Studio**(PIPA).
 
 ## 핵심 개념
 
@@ -29,7 +29,7 @@
 같은 PDF를 업로드해 위 3가지 청킹×저장 조합으로 임베딩 → 컬렉션 3개 생성.
 
 ### 2) 평가셋 생성 + 검수 + 저장
-**웹(권장):** **RAGAS 평가** 탭 → `1. 평가셋 만들기` → PDF 선택 + 문항 수 → **[Gemini로 생성]**
+**웹(권장):** **RAGAS 평가** 탭 → `1. 평가셋 만들기` → PDF 선택 + 문항 수 → **[평가셋 생성]**
 → 생성된 질문/정답을 **검수(편집·삭제)** → 이름 붙여 **[저장]**. 서버에 저장되어 모든 조합에서 재사용된다.
 
 **CLI(대안):**
@@ -37,7 +37,7 @@
 .venv/bin/python -m evaluation.generate_evalset \
     --pdf chunking-results/<doc>/<원본>.pdf --n 12 --out evaluation/eval_set.json
 ```
-- 둘 다 Gemini에 PDF를 inline 전송해 `[{question, ground_truth}]`를 생성(GOOGLE_API_KEY 필요 — 추천 기능과 동일 키).
+- 둘 다 PDF를 페이지 이미지 + 텍스트 레이어로 변환해 로컬 VLM에 보내고 `[{question, ground_truth}]`를 생성한다(외부 API 키 불필요).
 - **⚠️ 한국어 합성은 불안정**할 수 있다. 생성 후 **반드시 사람이 훑어** 깨지거나 근거 약한 항목을 제거/수정한다(웹은 검수 리스트에서 바로).
 - 정답(ground_truth)이 모두 채워져 있으면 **Context Recall**까지 측정된다(일부만 있으면 reference-free).
 - ⚠️ 생성은 비결정적 → **모든 조합에 같은(저장된) 평가셋**을 써야 비교가 공정.

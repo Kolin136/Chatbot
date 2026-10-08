@@ -1,10 +1,11 @@
-"""평가셋 자동 생성 — Gemini에 원본 PDF를 inline 전송해 질문+정답을 뽑는다.
+"""평가셋 자동 생성 — 로컬 VLM에 PDF 페이지를 보여주고 질문+정답을 뽑는다.
 
-app/chunking/recommender.py 패턴 재사용(pydantic_ai Agent + BinaryContent + Structured Output).
-채점이 아니라 '평가셋 생성'에만 Gemini를 쓴다(1회, dev-time). 채점은 로컬 LM Studio.
+app/chunking/recommender.py 패턴 재사용(pydantic_ai Agent + 페이지 이미지 + Structured Output).
+PDF는 페이지 이미지 + 텍스트 레이어로 변환해 LM Studio에 보낸다(app/pdf_pages.py) —
+문서가 외부로 나가지 않는다.
 
-⚠️ 한국어 합성은 불안정할 수 있다 → 생성 후 사람이 eval_set.json을 훑어 깨진 항목을 거른다.
-⚠️ Gemini로 PDF가 외부 전송된다(개인/가명정보 주의). GOOGLE_API_KEY는 기존 추천 기능과 동일 키.
+⚠️ 로컬 모델은 상용 모델보다 한국어 합성이 불안정하다 → 생성 후 사람이 반드시 훑어
+   깨진 항목·문서에 없는 내용을 지어낸 항목을 거른다. 평가셋 품질이 곧 평가 신뢰도다.
 
 예)
   .venv/bin/python -m evaluation.generate_evalset \
@@ -17,7 +18,9 @@ import json
 from pathlib import Path
 
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, BinaryContent
+from pydantic_ai import Agent, NativeOutput
+
+from app.pdf_pages import build_vlm_prompt
 
 
 class EvalItem(BaseModel):
@@ -43,28 +46,25 @@ def _system_prompt(n: int) -> str:
 
 
 async def generate_from_bytes(pdf_bytes: bytes, filename: str, n: int) -> EvalSet:
-    """PDF 바이트를 Gemini에 inline 전송해 평가셋을 생성한다. (CLI·웹 공용 코어)
+    """PDF를 페이지 이미지로 변환해 로컬 VLM에 보내고 평가셋을 생성한다. (CLI·웹 공용 코어)
 
-    recommend_model이 None(=GOOGLE_API_KEY 미설정)이면 RuntimeError.
+    LM Studio 미접속 등으로 실패하면 예외가 그대로 올라간다(라우터가 503으로 변환).
     """
-    from app.config import recommend_model  # Gemini 모델 단일 진입점
+    from app.config import chat_model  # LM Studio 모델 단일 진입점
 
-    if recommend_model is None:
-        raise RuntimeError(
-            "Gemini 모델이 구성되지 않았습니다. .env의 GOOGLE_API_KEY를 설정하세요(추천 기능과 동일 키)."
-        )
-
+    # NativeOutput(= LM Studio의 response_format: json_schema) 을 명시한다.
+    # pydantic_ai 기본값은 tool-call 경로인데, 로컬 gemma가 tool 인자를 채울 때
+    # 중첩 리스트의 두 번째 필드(ground_truth)를 빠뜨려 ValidationError 가 났다.
+    # 같은 모델이 JSON 스키마 모드에서는 동일 스키마를 정확히 채운다(실측).
     agent: Agent[None, EvalSet] = Agent(
-        recommend_model,
-        output_type=EvalSet,
+        chat_model,
+        output_type=NativeOutput(EvalSet),
         system_prompt=_system_prompt(n),
     )
-    result = await agent.run(
-        [
-            f"파일명: {filename}. 이 PDF로 평가셋 {n}개를 만들어 주세요.",
-            BinaryContent(data=pdf_bytes, media_type="application/pdf"),
-        ]
+    prompt = await build_vlm_prompt(
+        pdf_bytes, filename, f"이 문서로 평가셋 {n}개를 만들어 주세요."
     )
+    result = await agent.run(prompt)
     return result.output
 
 
@@ -76,7 +76,7 @@ async def generate(pdf_path: Path, n: int) -> EvalSet:
 def main() -> int:
     import asyncio
 
-    p = argparse.ArgumentParser(description="Gemini로 RAG 평가셋(질문+정답) 자동 생성")
+    p = argparse.ArgumentParser(description="로컬 VLM으로 RAG 평가셋(질문+정답) 자동 생성")
     p.add_argument("--pdf", required=True, type=Path, help="원본 PDF 경로")
     p.add_argument("--n", type=int, default=12, help="생성할 질문 수")
     p.add_argument("--out", type=Path, default=Path("evaluation/eval_set.json"))

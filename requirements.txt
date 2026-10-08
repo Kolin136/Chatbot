@@ -1,12 +1,15 @@
 fastapi
 uvicorn[standard]
-pydantic-ai[openai,google]
+pydantic-ai[openai]
 cachetools
 chromadb
 httpx
 python-dotenv
 docling
 transformers
+# PDF → 페이지 이미지 렌더링 (추천·평가셋 생성용). docling도 쓰지만 직접 의존 명시.
+pypdfium2
+
 langchain-core
 langchain-text-splitters
 langchain-experimental

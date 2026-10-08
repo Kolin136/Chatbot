@@ -259,10 +259,10 @@ async def upload_pdf(
 async def recommend_chunking_strategy(
     file: UploadFile = File(...),
 ) -> RecommendResponse:
-    """PDF를 Gemini API에 직접 전송해 청킹 전략을 추천받는다.
+    """PDF를 페이지 이미지로 변환해 로컬 VLM에 보내고 청킹 전략을 추천받는다.
 
     PDF당 1회 단발성 호출. 청킹/임베딩 파이프라인과 완전 독립.
-    GOOGLE_API_KEY가 .env에 없으면 503으로 응답하고 다른 기능은 정상 동작.
+    LM Studio 미접속/모델 미로드 시 503. 다른 기능은 정상 동작.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="파일 이름이 비어있습니다.")
@@ -273,18 +273,19 @@ async def recommend_chunking_strategy(
     pdf_bytes = await file.read()
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="빈 파일입니다.")
-    # Gemini API inline PDF 한도. 무료 티어도 동일.
+    # 페이지 렌더링·전송 비용 상한. 큰 PDF는 페이지 수만큼 이미지가 늘어
+    # 모델 컨텍스트를 초과한다(한도 초과 시 모델 호출 단계에서 실패).
     if len(pdf_bytes) > 50 * 1024 * 1024:
         raise HTTPException(
             status_code=413,
-            detail="PDF가 50MB를 초과합니다 (Gemini 한도).",
+            detail="PDF가 50MB를 초과합니다.",
         )
 
     try:
         from app.chunking.recommender import recommend_strategy
         rec = await recommend_strategy(pdf_bytes, filename)
     except RuntimeError as exc:
-        # GOOGLE_API_KEY 미설정 — 옵션 기능 비활성 상태
+        # PDF 렌더링 실패 등 — 일시적 불가로 간주
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         logger.exception("청킹 전략 추천 실패: %s", filename)

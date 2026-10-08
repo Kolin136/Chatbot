@@ -7,9 +7,7 @@ import os
 
 import chromadb
 from dotenv import load_dotenv
-from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.embeddings import LMStudioEmbedder
@@ -83,16 +81,6 @@ chroma_client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
 # RAG 검색 / 임베딩 / 목록 조회 시 chroma_client.get_or_create_collection(...) / list_collections() 로 동적 접근.
 
 
-# ─── 청킹 전략 추천 (Gemini API — 옵션 기능) ─────────────────────
-# GOOGLE_API_KEY가 없으면 recommend_model=None. 라우터가 503으로 응답하고
-# 청킹/임베딩/Chat 등 다른 기능은 정상 동작.
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-RECOMMEND_MODEL_NAME = os.environ.get("RECOMMEND_MODEL", "gemini-flash-lite-latest")
-
-if GOOGLE_API_KEY:
-    _gemini_provider = GoogleProvider(api_key=GOOGLE_API_KEY)
-    recommend_model: GoogleModel | None = GoogleModel(
-        RECOMMEND_MODEL_NAME, provider=_gemini_provider
-    )
-else:
-    recommend_model = None
+# 청킹 전략 추천 / RAGAS 평가셋 생성도 chat_model(LM Studio)을 쓴다.
+# PDF는 페이지 이미지 + 텍스트 레이어로 변환해 전달 (app/pdf_pages.py).
+# → 외부 API로 문서가 나가는 경로가 없다.

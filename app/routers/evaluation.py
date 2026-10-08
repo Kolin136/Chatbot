@@ -159,16 +159,16 @@ async def start_evaluation(
     )
 
 
-# ─── 평가셋 생성(Gemini)/저장/조회 ───────────────────────────────
+# ─── 평가셋 생성(로컬 VLM)/저장/조회 ─────────────────────────────
 
 
 @router.post("/evaluation/generate-evalset", response_model=GeneratedEvalSet)
 async def generate_evalset(
     file: UploadFile = File(...), n: int = Form(12)
 ) -> GeneratedEvalSet:
-    """PDF를 Gemini에 inline 전송해 질문+정답을 생성한다(저장 안 함 — 검수 먼저).
+    """PDF를 페이지 이미지로 변환해 로컬 VLM에 보내고 질문+정답을 생성한다(저장 안 함 — 검수 먼저).
 
-    GOOGLE_API_KEY 미설정 시 503. recommender 엔드포인트와 동일 패턴.
+    LM Studio 미접속/모델 미로드 시 503. recommender 엔드포인트와 동일 패턴.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="파일 이름이 비어있습니다.")
@@ -178,14 +178,14 @@ async def generate_evalset(
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="빈 파일입니다.")
     if len(pdf_bytes) > 50 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="PDF가 50MB를 초과합니다 (Gemini 한도).")
+        raise HTTPException(status_code=413, detail="PDF가 50MB를 초과합니다.")
     n = max(1, min(int(n), 50))
 
     try:
         from evaluation.generate_evalset import generate_from_bytes
 
         eval_set = await generate_from_bytes(pdf_bytes, file.filename, n)
-    except RuntimeError as exc:  # GOOGLE_API_KEY 미설정
+    except RuntimeError as exc:  # PDF 렌더링 실패 등
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         logger.exception("평가셋 생성 실패: %s", file.filename)

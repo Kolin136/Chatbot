@@ -40,7 +40,7 @@ router = APIRouter()
 EMBED_BATCH_SIZE = 32
 DOCS_ROOT = Path("chunking-results")
 
-# 요약 LLM 호출 간격 (초). Gemini free tier 분당 한도 회피용.
+# 요약 LLM 호출 간격 (초). LM Studio는 자체 한도가 없어 기본 0.
 # 환경변수로 조정 가능. 기본 13초 = 분당 ~4.6건 (scripts/index_docs.py 와 동일 정신).
 SUMMARY_INTERVAL_SEC = float(os.environ.get("EMBED_SUMMARY_INTERVAL_SEC", "13"))
 
@@ -77,7 +77,7 @@ async def _throttle_summary() -> None:
 async def _summarize_one(text: str, idx: int, total: int) -> str:
     """단일 청크 요약. 실패 시 원문 반환 (fallback)."""
     await _throttle_summary()
-    logger.info("[summary %d/%d] Gemini 요약 호출 (원문 %d자)", idx, total, len(text))
+    logger.info("[summary %d/%d] 요약 LLM 호출 (원문 %d자)", idx, total, len(text))
     try:
         result = await _summary_agent.run(SUMMARY_PROMPT_TEMPLATE.format(text=text))
         summary = (result.output or "").strip()
